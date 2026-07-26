@@ -25,6 +25,18 @@ VALID_CLAIMS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def block_paid_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make accidental live provider calls fail in the normal unit suite."""
+
+    def blocked_prompt_llm(prompt: str) -> str:
+        raise AssertionError(
+            "Unit tests must mock prompt_llm; paid LLM calls are not allowed."
+        )
+
+    monkeypatch.setattr(api, "prompt_llm", blocked_prompt_llm)
+
+
 @pytest.fixture
 def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     """Redirect all mutable backend files to one test-owned directory."""

@@ -67,8 +67,6 @@ side panel + Chrome APIs                      browser APIs only
                     +--> Groq chat-completions-compatible API
                     |    model: qwen/qwen3.6-27b
                     |
-                    +--> LangSmith tracing
-                    |
                     +--> redline.py
                          baseline vs tailored resume diff
 ```
@@ -130,7 +128,7 @@ paste job description --> POST /review --> one LLM call
 | Web panel | Static Next.js export; Vercel origin is allowed by backend CORS | Build configuration confirmed; live behavior not verified in this review |
 | Extension | Static Next.js export repackaged into `dist-extension/` with Manifest V3 files | Confirmed in build script; installed build not verified in this review |
 | LLM | Groq SDK using `qwen/qwen3.6-27b` in the current working tree | Confirmed in uncommitted code; differs from `main`, which uses OpenAI |
-| Tracing | LangSmith decorators and project configuration | Confirmed in code; successful production traces not verified |
+| Optional LLM tracing | Disabled; the application does not initialize an external tracing client or decorate LLM calls | Confirmed in code |
 | Durable user state | Repository/server files under `user/` | Confirmed in code; deployment persistence/backup not verified |
 | Workflow state | Shared files under `temp/` | Confirmed in code |
 
@@ -153,13 +151,16 @@ for the next documentation/refactor phase. “Current” does not imply “keep.
 | Review generation | Ask one LLM call to return fit, gaps, questions, and a complete tailored resume as strict JSON | Keeps orchestration simple; creates a large prompt/output and a brittle all-or-nothing response contract. |
 | Redlining | Generate deterministic token-level markup on the server | Separates content generation from diff generation and lets the UI accept/reject changes. |
 | Demo | Use checked-in job, resume, and response fixtures | Good fixture source; routing demo through mutable production workflow state is not a decision to retain. |
-| Observability | Use LangSmith for LLM traces and ad hoc `print` statements for application events | Provides some LLM visibility but not sufficient request-level operational logging. |
-| Refactor approach | Document and validate current behavior before changing architecture | Preserves useful behavior and makes later tradeoffs explicit. |
+| Observability | Disable optional prompt/response tracing; retain only application-owned, non-content model-call metadata and add structured operational logging | Resume and job content should not be copied into a second observability system. |
+| Refactor approach | Characterize behavior locally, refactor in vertical increments, then validate the supported web/streaming stack in production before optimizing LLM calls | Avoids testing obsolete production paths while keeping deployment uncertainty ahead of paid-workflow optimization. |
 
 ## Desired boundary for the next increment
 
-The first refactor should make one review an explicit unit of work owned by one
-authenticated user. A practical limited-beta shape is:
+The first structural refactor should make one review an explicit unit of work
+for the personal web workflow. Ownership remains part of the data model from
+the start, but two-user isolation is proved only after the personal workflow,
+local streaming, production boundary, and LLM efficiency are working. A
+practical limited-beta shape is:
 
 ```text
 Client-specific adapter (web or extension)
@@ -179,24 +180,17 @@ FastAPI routes --> review service --> LLM adapter
 ```
 
 This is a working hypothesis, not yet an implementation commitment. The
-smallest useful vertical increment is to isolate state and make the existing
-review → questions workflow reproducible for two users before adding broader
-features.
+smallest useful vertical increment is an isolated, schema-validated demo review
+that does not touch live state. Durable single-user state and the web client
+follow before streaming and production validation.
 
 ## Open questions
 
-- Is the Chrome extension still a first-class product surface for the limited
-  beta, or should the web app become primary?
-- Should beta users upload/manage their own resumes, or should the operator
-  provision them?
-- How long should resumes, job descriptions, answers, and generated reviews be
-  retained?
+- What deletion controls should users receive while development-period
+  persistence remains in effect?
 - Is PythonAnywhere still the intended host after state isolation and
   observability requirements are clear?
-- Which LLM/provider configuration should become the supported baseline? The
-  working tree currently differs from `main`.
-- Is LangSmith acceptable for beta data, and what redaction/retention policy is
-  required for resumes and job descriptions?
+- Which Groq model should become the supported baseline for each LLM stage?
 
 ## Validation boundary
 
@@ -204,5 +198,6 @@ This document was derived from repository code, fixtures, build configuration,
 tests, README history, and the existing authentication note on 2026-07-25.
 Static inspection confirms the architecture and the identified state
 ownership. It does not confirm that the deployed web app, installed extension,
-Google OAuth configuration, PythonAnywhere filesystem, Groq call, or LangSmith
-trace currently works end to end.
+Google OAuth configuration, PythonAnywhere filesystem, or Groq call currently
+works end to end. Streaming will be built and tested locally before its
+production hosting path is validated.

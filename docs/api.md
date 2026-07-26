@@ -224,7 +224,8 @@ behavior may disclose more detail than intended.
 ### Startup
 
 1. Load `.env`.
-2. Create global LLM and LangSmith clients.
+2. Create the global Groq LLM client. Optional external prompt/response tracing
+   is intentionally disabled.
 3. Create `temp/`.
 4. Copy `demo/resume_demo.txt` to `temp/resume_baseline.txt`.
 5. Copy `demo/job_description_demo.txt` to `temp/job_description.txt`.
@@ -351,7 +352,6 @@ Environment variables read by the current backend:
 |---|---|
 | `GROQ_API_KEY` | Current working-tree LLM provider |
 | `OPENAI_API_KEY` | Historical/current-main provider; unused by the working-tree implementation |
-| `LANGSMITH_API_KEY` | LangSmith client/tracing |
 | `GOOGLE_WEB_CLIENT_ID` | ID-token audience |
 | `ALLOWED_EMAILS` | Comma-separated invited email addresses |
 | `ALLOWED_DOMAINS` | Comma-separated invited domains |
@@ -365,5 +365,5 @@ Groq client. The intended proxy behavior therefore needs live validation.
 
 This contract was derived from static code and fixture inspection on
 2026-07-25. Automated tests and build checks are recorded in
-[backlog.md](backlog.md). No live identity, LLM, tracing, proxy, or deployment
-call is asserted here.
+[backlog.md](backlog.md). No live identity, LLM, proxy, streaming-host, or
+deployment call is asserted here.

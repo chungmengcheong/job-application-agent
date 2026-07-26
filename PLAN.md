@@ -821,24 +821,6 @@ experience.
 
 Each phase ends with a deployable or locally demonstrable vertical result.
 
-### Phase 0 — Validate the production boundary
-
-Goal: distinguish code defects from external configuration problems.
-
-- Inspect one existing LangSmith trace to understand current exposure, then
-  disable optional prompt/response tracing for the refactored workflow.
-- Validate Google web OAuth callback, state, nonce, expiry, logout, and
-  allowlist paths.
-- Run the current deployed web workflow end to end.
-- Verify the current LLM/provider from the production host.
-- Treat web as the primary beta surface; record extension behavior only to
-  avoid accidental regression before its later refactor.
-
-Exit gate:
-
-- Each validation-risk P0 backlog item is converted to validated behavior,
-  configuration work, or a reproducible defect.
-
 ### Phase 1 — Fix personal-use correctness and isolate demo
 
 Goal: make the existing personal workflow trustworthy before restructuring it.
@@ -905,32 +887,70 @@ Exit gate:
   smoke test.
 - Chrome-only code is confined to the Chrome platform and extension shell.
 
-### Phase 4 — Split and stream the LLM workflow
+### Phase 4 — Add durable local streaming
 
-Goal: improve time-to-value and reduce repeated tokens without weakening
-output quality.
+Goal: prove the transport and recovery model locally without paid model calls
+or production-host dependencies.
 
-- Establish baseline token/latency/quality measurements for the current prompt.
+- Add typed, sequenced SSE review events with safe errors.
+- Keep the durable review record as source of truth; events are notifications,
+  not the only copy of workflow state.
+- Implement the web event client, reconnect behavior, and polling fallback.
+- Drive tests with deterministic mocked provider chunks, malformed chunks,
+  timeouts, disconnects, and completed-server/failed-client cases.
+- Ensure reload or reconnect cannot duplicate a completed provider call.
+
+Exit gate:
+
+- The local web app receives incremental mocked output and useful status.
+- Disconnect, refresh, and fallback polling recover the durable review without
+  duplicate work or false completion.
+- The normal automated suite makes no paid LLM calls.
+
+### Phase 5 — Validate the production boundary
+
+Goal: validate the now-relevant deployment assumptions after the supported web
+and streaming paths exist.
+
+- Validate Google web OAuth callback, state, nonce, expiry, logout, and
+  allowlist paths.
+- Run the deployed personal web workflow end to end.
+- Verify SQLite durability, locking, backup/restore, and overlapping writes on
+  the production host.
+- Verify Groq connectivity through the OpenAI-compatible adapter from the
+  production host.
+- Verify that SSE chunks reach the deployed web client without buffering or
+  premature termination; retain durable polling if the host cannot support it.
+- Confirm optional external prompt/response tracing remains disabled.
+
+Exit gate:
+
+- Each production validation risk is converted to validated behavior,
+  configuration work, or a reproducible defect.
+
+### Phase 6 — Make the LLM workflow efficient
+
+Goal: reduce repeated tokens and improve time-to-value without weakening output
+quality.
+
+- Establish baseline token, latency, failure, and fixture-quality measurements
+  for the current prompt.
 - Implement typed structured-analysis output.
 - Persist and emit analysis completion before tailoring.
-- Implement the tailored-resume stage as a streamed provider call.
-- Add SSE review events with sequence numbers and safe errors.
-- Configure explicit provider connect/read/total timeouts.
-- Retry only pre-stream or otherwise idempotent failures; never replay an
-  ambiguous partial generation automatically.
+- Implement the tailored-resume stage through Groq's streaming interface.
+- Configure explicit provider connect/read/total timeouts and safe retry rules.
 - Map provider failures into the common API error contract.
-- Add disconnect/reload and interrupted-stream tests.
-- Implement compact follow-up inputs and compare quality/token use to baseline.
+- Implement compact follow-up inputs.
 - Run deterministic redline only after final resume validation.
+- Compare the staged workflow with the baseline evaluation set.
 
 Exit gate:
 
 - The UI receives useful analysis before tailoring completes.
-- Reload/disconnect does not duplicate a completed call.
-- Token and latency measurements show improvement without material quality loss
-  on the evaluation set.
+- Token and latency measurements improve without material quality loss.
+- Ambiguous partial generations are never automatically replayed.
 
-### Phase 5 — Prove multi-user isolation
+### Phase 7 — Prove multi-user isolation
 
 Goal: extend the personally useful workflow to a handful of invited users.
 
@@ -945,7 +965,7 @@ Exit gate:
 - Two users can run overlapping review and follow-up workflows with no
   cross-user reads, writes, or state corruption.
 
-### Phase 6 — Remove compatibility paths and harden beta operations
+### Phase 8 — Remove compatibility paths and harden beta operations
 
 Goal: leave one supported architecture.
 
@@ -954,7 +974,7 @@ Goal: leave one supported architecture.
   the full extension refactor.
 - Add structured request, review, and model-call logging.
 - Add readiness checks and operator-facing failure inspection.
-- Enforce retention/deletion and tracing policies.
+- Enforce retention/deletion policy and keep optional external traces disabled.
 - Remove unused frontend/backend dependencies and stale configuration.
 - Make backend tests, schema tests, frontend typecheck/lint/build, and web smoke
   tests a release gate.
@@ -967,7 +987,7 @@ Exit gate:
 - The supported web/beta workflow deploys through a repeatable release gate and
   has a tested rollback/recovery path.
 
-### Phase 7 — Refactor the Chrome extension after beta
+### Phase 9 — Refactor the Chrome extension after beta
 
 Goal: make the extension a thin P2 shell over the proven shared product core.
 
@@ -1008,6 +1028,9 @@ Principles:
 - Prefer small deterministic fixtures over production or personal data.
 - Keep all provider, Google, network, clock, and filesystem dependencies
   controlled in unit tests.
+- The normal pytest suite blocks `prompt_llm` by default. A test must inject a
+  fake response explicitly; live quality evaluations use a separate,
+  deliberately invoked command and are never part of routine test runs.
 - Give each backend test isolated mutable paths or a transaction-scoped test
   database; tests must not write repository `temp/` or user files.
 - Assert schemas, state transitions, ownership, and decision-critical values.
@@ -1119,8 +1142,9 @@ Never log:
 - raw prompts/responses; or
 - provider exceptions that may contain request content.
 
-LangSmith is not automatically the production logging system. Its use depends
-on the deferred trace-content, access, retention, and redaction decision.
+Optional external prompt/response tracing is disabled. The application owns
+the minimum model-call metadata needed for cost, latency, failure, and prompt
+version analysis without retaining prompt or response content.
 
 ## Migration and rollback
 
@@ -1144,7 +1168,7 @@ on the deferred trace-content, access, retention, and redaction decision.
 | Split prompts reduce output coherence | Compare current one-call output with staged output on representative job/resume fixtures. |
 | Follow-up context reduction drops evidence | Build an eval checking every material claim against the resume and answers. |
 | Web OAuth configuration is stale | Inspect registered redirects and run success/failure callback paths. |
-| LangSmith captures sensitive data | Inspect one identifiable trace before further live testing. |
+| Optional tracing is re-enabled accidentally | Keep tracing dependencies/configuration out of the runtime and verify their absence in configuration tests and deployment review. |
 | Extension and web adapters drift | Run the shared contract suite against both adapters; choose one primary release surface. |
 
 ## Resolved decisions and remaining questions
@@ -1180,7 +1204,8 @@ short setup decisions first:
    and unrelated user work before application refactoring begins.
 2. **Align sequence in both planning documents.** Reflect the chosen order:
    personal correctness and demo, durable single-user review state, web
-   refactor, efficient/streaming LLM loop, then multi-user isolation.
+   refactor, local streaming, production validation, LLM efficiency, then
+   multi-user isolation.
 3. **Use the current demo as the acceptance scenario.** The checked-in demo
    resume, job description, initial response, and follow-up response are the
    initial end-to-end behavioral thread through the increments. Validate their
@@ -1202,15 +1227,16 @@ Decide these just in time rather than blocking Increment 1:
 - canonical web URL and deployment topology — before the web increment;
 - SQLite backup/deploy mechanics — before durable persistence is deployed;
 - exact Groq model, token/latency targets, and quality eval thresholds — before
-  the LLM increment;
-- polling versus SSE — after the hosting spike and before streaming work;
+  the LLM-efficiency increment;
+- whether production hosting supports SSE — validate after local streaming
+  works; durable polling remains the fallback;
 - user-facing deletion and post-development retention — before limited beta;
   and
 - whether the extension remains worth supporting — after web-beta learning.
 
 ## First implementation slice
 
-After the deferred live validations, the first coding slice should be:
+The first coding slice should be:
 
 > Create an isolated, schema-validated demo review through a `ReviewService`
 > and render it through the current frontend without reading or writing

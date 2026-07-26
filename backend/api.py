@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from pydantic import BaseModel
 # from openai import OpenAI
 from groq import Groq
-from langsmith import traceable, Client
 from pathlib import Path
 import os, shutil, datetime
 import httpx
@@ -60,14 +59,11 @@ if proxy_url:
 else:
     http_client = httpx.Client(timeout=_timeout)
 
-# Setup Open AI and LangSmith tracing
+# Setup the LLM client. Optional prompt/response tracing is intentionally
+# disabled because requests contain resumes and job descriptions.
 # LLM = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 LLM = Groq(api_key=os.getenv("GROQ_API_KEY"))
 LLM_MODEL = "qwen/qwen3.6-27b"
-
-os.environ["LANGSMITH_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_PROJECT"] = "AIRecruitingAgent"
-langsmith_client = Client(api_key=os.getenv("LANGSMITH_API_KEY"))
 
 # Prepare temp and working files for FastAPI app
 @asynccontextmanager
@@ -149,7 +145,6 @@ def splash():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@traceable(name="prompt_LLM")
 def prompt_llm(prompt: str) -> str:
     """Call OpenAI API to get a response."""
     response = LLM.chat.completions.create(
@@ -222,7 +217,6 @@ class JobListing(BaseModel):
 
 
 @app.post("/review")
-@traceable(name="generate_review_endpoint")
 def generate_review(job_listing: JobListing,
                     creds=Security(security)
                     ):
@@ -278,7 +272,6 @@ class QuestionAnswers(BaseModel):
 
 
 @app.post("/questions")
-@traceable(name="process_questions_and_answers_endpoint")
 def process_questions_and_answers(user_response: QuestionAnswers,
                                   creds=Security(security)
                                   ):

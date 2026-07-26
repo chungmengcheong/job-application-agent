@@ -13,38 +13,6 @@ Entries marked **Confirmed** are supported directly by code, tests, or build
 configuration. Entries marked **Validation risk** require a live check before
 the implementation choice is considered settled.
 
-## Increment: 0 — Validate the production boundary
-
-Title: Inspect and disable optional LangSmith traces
-Description: **Validation risk.** Inspect one identifiable existing trace to determine current exposure, then disable optional prompt/response tracing for the refactored workflow. Application-owned model-call metadata remains persistent.
-Priority: P0
-Date_added: 2026-07-25
-
-Title: Verify and harden web authentication
-Description: **Validation risk plus confirmed defect.** Confirm the Vercel callback registration and exercise state, nonce, expiry, logout, and unauthorized-user paths. Current allowlist authorization can accept an unverified email; enforce verification before allowlist checks and fail closed when expected state or nonce is missing.
-Priority: P0
-Date_added: 2026-07-25
-
-Title: Validate the deployed personal web workflow
-Description: **Validation risk.** Exercise login, resume load, review, follow-up questions, redline editing, and copy in the deployed web app. Convert each failure into a reproducible defect or configuration task.
-Priority: P0
-Date_added: 2026-07-25
-
-Title: Establish Groq through an OpenAI-compatible adapter
-Description: **Confirmed direction.** Make Groq the supported provider behind an OpenAI-shaped adapter; remove mixed provider wiring and verify the chosen model from the production host.
-Priority: P0
-Date_added: 2026-07-25
-
-Title: Validate SQLite on the production host
-Description: **Validation risk.** Confirm durable filesystem behavior, locking, backup/restore, deployment persistence, and overlapping writes on PythonAnywhere before relying on SQLite for beta.
-Priority: P1
-Date_added: 2026-07-25
-
-Title: Validate streaming through the hosting path
-Description: **Validation risk.** Deploy a minimal Server-Sent Events heartbeat and verify that PythonAnywhere and the web client receive chunks without buffering or premature termination. Retain polling as the fallback.
-Priority: P2
-Date_added: 2026-07-25
-
 ## Increment: 1 — Fix personal correctness and isolate demo
 
 Title: Preserve the submitted job description through follow-up
@@ -216,10 +184,59 @@ Description: Require frontend unit/contract tests, typecheck, lint, static build
 Priority: P1
 Date_added: 2026-07-25
 
-## Increment: 4 — Make the LLM loop efficient and streaming
+## Increment: 4 — Add durable local streaming
+
+Title: Add durable Server-Sent Events
+Description: Expose typed, sequenced status, content-delta, completion, and safe-failure events while keeping the durable review record as source of truth.
+Priority: P2
+Date_added: 2026-07-25
+
+Title: Add a typed web event client and polling fallback
+Description: Consume sequenced events, reconnect by review ID, and recover from the durable review record. Keep polling as a supported fallback when streaming is unavailable.
+Priority: P2
+Date_added: 2026-07-25
+
+Title: Validate streaming recovery without paid calls
+Description: Use deterministic mocked chunks to test disconnect, refresh, timeout, malformed events, and completed-server/failed-client cases without duplicate work or false completion.
+Priority: P2
+Date_added: 2026-07-25
+
+## Increment: 5 — Validate the production boundary
+
+Title: Verify and harden web authentication
+Description: **Validation risk plus confirmed defect.** Confirm the deployed callback registration and exercise state, nonce, expiry, logout, and unauthorized-user paths. Enforce verified email before allowlist checks and fail closed when expected state or nonce is missing.
+Priority: P0
+Date_added: 2026-07-25
+
+Title: Validate the deployed personal web workflow
+Description: **Validation risk.** Exercise login, resume selection, review, follow-up questions, redline editing, save, and copy/download in the deployed web app.
+Priority: P0
+Date_added: 2026-07-25
+
+Title: Validate SQLite on the production host
+Description: **Validation risk.** Confirm durable filesystem behavior, locking, backup/restore, deployment persistence, and overlapping writes before relying on SQLite for beta.
+Priority: P1
+Date_added: 2026-07-25
+
+Title: Validate Groq from the production host
+Description: **Validation risk.** Verify the supported Groq model through the OpenAI-compatible adapter, including proxy behavior, timeouts, safe errors, and model-call metadata.
+Priority: P0
+Date_added: 2026-07-25
+
+Title: Validate streaming through the hosting path
+Description: **Validation risk.** Verify that the deployed SSE path reaches the web client without buffering or premature termination. Retain durable polling if the host cannot stream reliably.
+Priority: P2
+Date_added: 2026-07-25
+
+Title: Verify optional external tracing remains disabled
+Description: Confirm production configuration does not load an external prompt/response tracing client and that only application-owned, non-content model-call metadata is retained.
+Priority: P0
+Date_added: 2026-07-25
+
+## Increment: 6 — Make the LLM loop efficient
 
 Title: Baseline current LLM quality, tokens, and latency
-Description: Record representative first-review and follow-up results, input/output tokens, total latency, and failure rate before splitting the prompt.
+Description: Record representative first-review and follow-up results, input/output tokens, time to first useful output, total latency, and failure rate before splitting the prompt.
 Priority: P2
 Date_added: 2026-07-25
 
@@ -228,18 +245,8 @@ Description: Make the first Groq call return validated fit, positioning, stable 
 Priority: P2
 Date_added: 2026-07-25
 
-Title: Reduce follow-up context
-Description: Send compact job requirements, affected gaps, relevant resume evidence, and new answers rather than prior prose and the previously tailored resume. Measure quality before removing the full resume snapshot.
-Priority: P2
-Date_added: 2026-07-25
-
 Title: Stream plain tailored-resume generation
-Description: Use Groq's OpenAI-compatible streaming interface for the tailoring stage. Stream plain resume text only; generate redlines deterministically after validation.
-Priority: P2
-Date_added: 2026-07-25
-
-Title: Add durable Server-Sent Events
-Description: Expose typed, sequenced status, analysis-completed, tailoring-delta, completion, and safe-failure events while keeping the review record as source of truth.
+Description: Use Groq's OpenAI-compatible streaming interface for the tailoring stage. Stream plain resume text only; generate redlines deterministically after final validation.
 Priority: P2
 Date_added: 2026-07-25
 
@@ -248,8 +255,8 @@ Description: Configure explicit connect/read/total timeouts. Retry only pre-stre
 Priority: P2
 Date_added: 2026-07-25
 
-Title: Validate interrupted-stream recovery
-Description: Test client disconnect, refresh, provider timeout, malformed chunks, and completed-server/failed-client cases without duplicate paid calls or false completion.
+Title: Reduce follow-up context
+Description: Send compact job requirements, affected gaps, relevant resume evidence, and new answers rather than prior prose and the previously tailored resume. Measure quality before removing the full resume snapshot.
 Priority: P2
 Date_added: 2026-07-25
 
@@ -258,7 +265,7 @@ Description: Confirm improved time to first useful output and lower repeated tok
 Priority: P2
 Date_added: 2026-07-25
 
-## Increment: 5 — Prove multi-user isolation
+## Increment: 7 — Prove multi-user isolation
 
 Title: Scope every repository operation by owner
 Description: Ensure resume and review reads, writes, retries, answers, and deletes require the authenticated internal user. Return the same not-found result for missing and other-user resources.
@@ -275,7 +282,7 @@ Description: Persist resumes, job descriptions, answers, reviews, and model-call
 Priority: P1
 Date_added: 2026-07-25
 
-## Increment: 6 — Harden and retire compatibility paths
+## Increment: 8 — Harden and retire compatibility paths
 
 Title: Add structured request and workflow logging
 Description: Record request ID, safe user identifier, review ID, route/stage, status, duration, model/prompt version, token usage, and safe error codes without sensitive content.
@@ -317,7 +324,7 @@ Description: Define SQLite backup/restore, schema migration, production deployme
 Priority: P1
 Date_added: 2026-07-25
 
-## Increment: 7 — Revisit the Chrome extension after web beta
+## Increment: 9 — Revisit the Chrome extension after web beta
 
 Title: Reassess whether the extension remains worth supporting
 Description: Use web-beta learning to decide whether active-tab context and side-panel convenience justify maintaining a second client.
