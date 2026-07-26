@@ -6,7 +6,8 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from openai import OpenAI
+# from openai import OpenAI
+from groq import Groq
 from langsmith import traceable, Client
 from pathlib import Path
 import os, shutil, datetime
@@ -60,7 +61,10 @@ else:
     http_client = httpx.Client(timeout=_timeout)
 
 # Setup Open AI and LangSmith tracing
-LLM = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# LLM = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+LLM = Groq(api_key=os.getenv("GROQ_API_KEY"))
+LLM_MODEL = "qwen/qwen3.6-27b"
+
 os.environ["LANGSMITH_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_PROJECT"] = "AIRecruitingAgent"
 langsmith_client = Client(api_key=os.getenv("LANGSMITH_API_KEY"))
@@ -149,8 +153,7 @@ def splash():
 def prompt_llm(prompt: str) -> str:
     """Call OpenAI API to get a response."""
     response = LLM.chat.completions.create(
-        model="gpt-5-mini",
-        temperature=1,
+        model=LLM_MODEL,
         messages=[{"role": "user",
                    "content": prompt}
                   ]

@@ -2,7 +2,7 @@
 
 This is a brief note to clarify my mental model of how authentication and authorization works in this project.
 
-### Setup
+## Setup
 
 1. the chrome extension has an unique identifier (chrome extension ID oblgighcolckndbinadplmmmebjemido). it's usually assigned by google. but in my case, i put in a key into manifest.json, which then creates a stable ID. 
 

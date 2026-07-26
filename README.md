@@ -13,7 +13,7 @@ The AI Recruiting Agent interacts with user through a Chrome extension to:
 * [Future] "Agentically" auto-complete the job application forms on their behalf!
 * [Future] Identifies relevant 1st and 2nd degree contacts for networking into the job
 
-Behind the scenes, the AI Recruiting Agent uses a custom AI-pipeline incorporating the developer's years of career coaching and recruiting experience together with OpenAI's latest LLM models.
+Behind the scenes, the AI Recruiting Agent uses a custom AI-pipeline incorporating the developer's years of career coaching and recruiting experience together with latest LLM models.
 
 ### Installation instructions
 To install the latest version of the compiled chrome extension:
@@ -23,7 +23,7 @@ To install the latest version of the compiled chrome extension:
 4. Click "Load unpacked" and select the "dist-extension" directory
 5. The extension should now appear in your list of extensions (top right of the browser window)
 
-Or you can use the web version (beta) of the extenion at https://airecruitingagent.pythonanywhere.com 
+Or you can use the web version (beta) of the extension at https://airecruitingagent.pythonanywhere.com 
 
 
 ### Compiling the browser extension

@@ -114,7 +114,7 @@ def test_generate_review_demo(test_client, monkeypatch):
     data_dict = response.json()
     assert "Tailored_Resume" in data_dict
     # check that content from demo LLM response file is returned
-    assert "Chung Meng Cheong" in data_dict["Tailored_Resume"]
+    assert "Jane Doe" in data_dict["Tailored_Resume"]
 
 
 def test_generate_review(test_client, monkeypatch):
@@ -155,7 +155,7 @@ def test_process_questions_and_answers_demo(test_client, monkeypatch):
     data_dict = response.json()
     # check that content from demo LLM response file is returned
     assert data_dict["Fit"]["score"] == 8
-    assert data_dict["Questions"][0] == "Have you personally led or closed a seed or Series A round? If yes, list round (seed/Series A), amount, year, and your role (lead/co-founder/executive)."
+    assert data_dict["Questions"][0] == "For the ML work at HomeQuest and Financia: what model types/approaches and frameworks were used (e.g., recommenders, NLP, TensorFlow, PyTorch), team size you founded/led, and a measurable outcome (CTR, retention, revenue lift)?"
 
 
 def test_process_questions_and_answers(test_client, monkeypatch):
@@ -171,8 +171,9 @@ def test_manage_resume(test_client, monkeypatch):
     monkeypatch.setattr(api, "RESUME_FILE", TEST_RESUME_FILE)
     response = test_client.get(
         "/resume",
-        params={"command": "load"})
+        params={"command": "load"},
+        headers={"Authorization": "Bearer test-token"})
     assert response.status_code == 200
     data_dict = response.json()
-    # check that content from test resume file is returned
+    # check that content from the test resume file is returned
     assert data_dict["resume"] == resume
