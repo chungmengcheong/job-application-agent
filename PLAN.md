@@ -921,7 +921,8 @@ and streaming paths exist.
   production host.
 - Verify that SSE chunks reach the deployed web client without buffering or
   premature termination; retain durable polling if the host cannot support it.
-- Confirm optional external prompt/response tracing remains disabled.
+- Confirm production sets `LANGSMITH_TRACING_V2=false`; development tracing may
+  remain enabled for the accepted demo and personal data.
 
 Exit gate:
 
@@ -974,7 +975,8 @@ Goal: leave one supported architecture.
   the full extension refactor.
 - Add structured request, review, and model-call logging.
 - Add readiness checks and operator-facing failure inspection.
-- Enforce retention/deletion policy and keep optional external traces disabled.
+- Enforce retention/deletion policy and add proper tracing content, access, and
+  retention guards before considering tracing for beta users.
 - Remove unused frontend/backend dependencies and stale configuration.
 - Make backend tests, schema tests, frontend typecheck/lint/build, and web smoke
   tests a release gate.
@@ -1142,9 +1144,11 @@ Never log:
 - raw prompts/responses; or
 - provider exceptions that may contain request content.
 
-Optional external prompt/response tracing is disabled. The application owns
-the minimum model-call metadata needed for cost, latency, failure, and prompt
-version analysis without retaining prompt or response content.
+LangSmith tracing is acceptable for development with the accepted demo and
+personal data. Production sets `LANGSMITH_TRACING_V2=false` until content,
+access, and retention guards exist. The application still owns the minimum
+model-call metadata needed for cost, latency, failure, and prompt-version
+analysis.
 
 ## Migration and rollback
 
@@ -1168,7 +1172,7 @@ version analysis without retaining prompt or response content.
 | Split prompts reduce output coherence | Compare current one-call output with staged output on representative job/resume fixtures. |
 | Follow-up context reduction drops evidence | Build an eval checking every material claim against the resume and answers. |
 | Web OAuth configuration is stale | Inspect registered redirects and run success/failure callback paths. |
-| Optional tracing is re-enabled accidentally | Keep tracing dependencies/configuration out of the runtime and verify their absence in configuration tests and deployment review. |
+| LangSmith tracing exposes beta-user data | Require `LANGSMITH_TRACING_V2=false` in production readiness checks until content, access, and retention guards exist. |
 | Extension and web adapters drift | Run the shared contract suite against both adapters; choose one primary release surface. |
 
 ## Resolved decisions and remaining questions
@@ -1183,7 +1187,8 @@ Resolved:
 - Groq is the supported provider behind an OpenAI-compatible adapter.
 - Resumes, job descriptions, answers, reviews, and model-call metadata persist
   throughout development.
-- Optional prompt/response traces are not retained by the refactored workflow.
+- LangSmith traces are acceptable for demo/personal development; production
+  tracing stays disabled until proper guards exist.
 
 Remaining:
 

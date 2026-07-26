@@ -5,5 +5,6 @@ openai~=1.99.8
 python-dotenv~=1.0.0
 pytest~=8.3.4
 starlette~=0.47.2
+langsmith~=0.4.6
 google-auth~=2.28.0
 groq~=1.5.0

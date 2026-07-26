@@ -228,8 +228,8 @@ Description: **Validation risk.** Verify that the deployed SSE path reaches the 
 Priority: P2
 Date_added: 2026-07-25
 
-Title: Verify optional external tracing remains disabled
-Description: Confirm production configuration does not load an external prompt/response tracing client and that only application-owned, non-content model-call metadata is retained.
+Title: Verify LangSmith tracing is disabled in production
+Description: Confirm production sets `LANGSMITH_TRACING_V2=false`. Keep development tracing limited to accepted demo/personal data until content, access, and retention guards are implemented.
 Priority: P0
 Date_added: 2026-07-25
 

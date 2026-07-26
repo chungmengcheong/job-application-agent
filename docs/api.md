@@ -224,8 +224,8 @@ behavior may disclose more detail than intended.
 ### Startup
 
 1. Load `.env`.
-2. Create the global Groq LLM client. Optional external prompt/response tracing
-   is intentionally disabled.
+2. Create the global Groq LLM and LangSmith clients. Tracing defaults on for
+   development and can be disabled through `LANGSMITH_TRACING_V2=false`.
 3. Create `temp/`.
 4. Copy `demo/resume_demo.txt` to `temp/resume_baseline.txt`.
 5. Copy `demo/job_description_demo.txt` to `temp/job_description.txt`.
@@ -352,6 +352,8 @@ Environment variables read by the current backend:
 |---|---|
 | `GROQ_API_KEY` | Current working-tree LLM provider |
 | `OPENAI_API_KEY` | Historical/current-main provider; unused by the working-tree implementation |
+| `LANGSMITH_API_KEY` | Development LLM tracing |
+| `LANGSMITH_TRACING_V2` | Set to `false` to disable tracing in production |
 | `GOOGLE_WEB_CLIENT_ID` | ID-token audience |
 | `ALLOWED_EMAILS` | Comma-separated invited email addresses |
 | `ALLOWED_DOMAINS` | Comma-separated invited domains |

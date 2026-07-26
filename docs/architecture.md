@@ -67,6 +67,8 @@ side panel + Chrome APIs                      browser APIs only
                     +--> Groq chat-completions-compatible API
                     |    model: qwen/qwen3.6-27b
                     |
+                    +--> LangSmith tracing (development)
+                    |
                     +--> redline.py
                          baseline vs tailored resume diff
 ```
@@ -128,7 +130,7 @@ paste job description --> POST /review --> one LLM call
 | Web panel | Static Next.js export; Vercel origin is allowed by backend CORS | Build configuration confirmed; live behavior not verified in this review |
 | Extension | Static Next.js export repackaged into `dist-extension/` with Manifest V3 files | Confirmed in build script; installed build not verified in this review |
 | LLM | Groq SDK using `qwen/qwen3.6-27b` in the current working tree | Confirmed in uncommitted code; differs from `main`, which uses OpenAI |
-| Optional LLM tracing | Disabled; the application does not initialize an external tracing client or decorate LLM calls | Confirmed in code |
+| Optional LLM tracing | LangSmith enabled by default for development; production disables it with `LANGSMITH_TRACING_V2=false` until proper guards exist | Confirmed in code |
 | Durable user state | Repository/server files under `user/` | Confirmed in code; deployment persistence/backup not verified |
 | Workflow state | Shared files under `temp/` | Confirmed in code |
 
@@ -151,7 +153,7 @@ for the next documentation/refactor phase. “Current” does not imply “keep.
 | Review generation | Ask one LLM call to return fit, gaps, questions, and a complete tailored resume as strict JSON | Keeps orchestration simple; creates a large prompt/output and a brittle all-or-nothing response contract. |
 | Redlining | Generate deterministic token-level markup on the server | Separates content generation from diff generation and lets the UI accept/reject changes. |
 | Demo | Use checked-in job, resume, and response fixtures | Good fixture source; routing demo through mutable production workflow state is not a decision to retain. |
-| Observability | Disable optional prompt/response tracing; retain only application-owned, non-content model-call metadata and add structured operational logging | Resume and job content should not be copied into a second observability system. |
+| Observability | Allow LangSmith tracing for demo/personal development data; disable it in production until content, access, and retention guards exist | Application-owned, non-content model-call metadata remains the eventual operational record. |
 | Refactor approach | Characterize behavior locally, refactor in vertical increments, then validate the supported web/streaming stack in production before optimizing LLM calls | Avoids testing obsolete production paths while keeping deployment uncertainty ahead of paid-workflow optimization. |
 
 ## Desired boundary for the next increment
