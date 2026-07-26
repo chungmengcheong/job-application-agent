@@ -21,7 +21,7 @@ Priority: P0
 Date_added: 2026-07-25
 
 Title: Verify and harden web authentication
-Description: **Validation risk.** Confirm the Vercel callback registration and exercise state, nonce, expiry, logout, and unauthorized-user paths. Fail closed when expected state or nonce is missing.
+Description: **Validation risk plus confirmed defect.** Confirm the Vercel callback registration and exercise state, nonce, expiry, logout, and unauthorized-user paths. Current allowlist authorization can accept an unverified email; enforce verification before allowlist checks and fail closed when expected state or nonce is missing.
 Priority: P0
 Date_added: 2026-07-25
 
@@ -119,8 +119,18 @@ Description: Persist owner, resume snapshot, job description, source URL, mode, 
 Priority: P1
 Date_added: 2026-07-25
 
+Title: Add transactional workflow transitions
+Description: Make `ReviewService` the only state-transition owner. Preserve the last valid artifact on failure and record each retry as a new model-call attempt.
+Priority: P1
+Date_added: 2026-07-25
+
 Title: Persist typed review artifacts
 Description: Store versioned analysis, gap map, questions, answers, tailored resume, and deterministic redline separately from raw provider responses.
+Priority: P1
+Date_added: 2026-07-25
+
+Title: Add artifact and answer version checks
+Description: Reject stale follow-up answers and finalized-resume saves when their source analysis or tailored-resume version has changed.
 Priority: P1
 Date_added: 2026-07-25
 
@@ -144,34 +154,7 @@ Description: Route legacy calls through the new service only while the web clien
 Priority: P2
 Date_added: 2026-07-25
 
-## Increment: 3 — Prove multi-user isolation
-
-Title: Scope every repository operation by owner
-Description: Ensure resume and review reads, writes, retries, answers, and deletes require the authenticated internal user. Return the same not-found result for missing and other-user resources.
-Priority: P1
-Date_added: 2026-07-25
-
-Title: Add transactional workflow transitions
-Description: Make `ReviewService` the only state-transition owner. Preserve the last valid artifact on failure and record each retry as a new model-call attempt.
-Priority: P1
-Date_added: 2026-07-25
-
-Title: Add artifact and answer version checks
-Description: Reject stale follow-up answers and finalized-resume saves when their source analysis or tailored-resume version has changed.
-Priority: P1
-Date_added: 2026-07-25
-
-Title: Add two-user concurrency and authorization tests
-Description: Run overlapping review, follow-up, resume update, and unauthorized-access scenarios for two identities—not only sequential happy paths.
-Priority: P1
-Date_added: 2026-07-25
-
-Title: Define development-period retention and deletion controls
-Description: Persist resumes, job descriptions, answers, reviews, and model-call metadata throughout development. Provide explicit user/operator deletion and document when the policy must be revisited before broader use.
-Priority: P1
-Date_added: 2026-07-25
-
-## Increment: 4 — Rebuild the web client around the new API
+## Increment: 3 — Rebuild the web client around the new API
 
 Title: Split the monolithic panel into product features
 Description: Extract job description, review summary, gap map, follow-up questions, tailored resume, redline editor, and review workspace from `extension-panel.tsx`.
@@ -213,6 +196,11 @@ Description: Keep hover and accept/reject/edit state local until the user saves.
 Priority: P2
 Date_added: 2026-07-25
 
+Title: Replace brittle regex redline parsing
+Description: **Confirmed by test.** A replacement followed by a standalone deletion can be merged into one incorrect change. Parse the server redline contract deterministically and prove mixed/repeated changes reconstruct both resume versions.
+Priority: P1
+Date_added: 2026-07-25
+
 Title: Remove the backend selector from production
 Description: Make backend URL deployment configuration and expose local/cloud selection only in development builds.
 Priority: P3
@@ -228,7 +216,7 @@ Description: Require frontend unit/contract tests, typecheck, lint, static build
 Priority: P1
 Date_added: 2026-07-25
 
-## Increment: 5 — Make the LLM loop efficient and streaming
+## Increment: 4 — Make the LLM loop efficient and streaming
 
 Title: Baseline current LLM quality, tokens, and latency
 Description: Record representative first-review and follow-up results, input/output tokens, total latency, and failure rate before splitting the prompt.
@@ -270,6 +258,23 @@ Description: Confirm improved time to first useful output and lower repeated tok
 Priority: P2
 Date_added: 2026-07-25
 
+## Increment: 5 — Prove multi-user isolation
+
+Title: Scope every repository operation by owner
+Description: Ensure resume and review reads, writes, retries, answers, and deletes require the authenticated internal user. Return the same not-found result for missing and other-user resources.
+Priority: P1
+Date_added: 2026-07-25
+
+Title: Add two-user concurrency and authorization tests
+Description: Run overlapping review, follow-up, resume update, and unauthorized-access scenarios for two identities—not only sequential happy paths.
+Priority: P1
+Date_added: 2026-07-25
+
+Title: Define development-period retention and deletion controls
+Description: Persist resumes, job descriptions, answers, reviews, and model-call metadata throughout development. Provide explicit user/operator deletion and document when the policy must be revisited before broader use.
+Priority: P1
+Date_added: 2026-07-25
+
 ## Increment: 6 — Harden and retire compatibility paths
 
 Title: Add structured request and workflow logging
@@ -282,8 +287,8 @@ Description: Extend the process heartbeat with non-sensitive configuration/depen
 Priority: P2
 Date_added: 2026-07-25
 
-Title: Restore the complete backend release gate
-Description: Fix default test imports, replace the intentionally failing follow-up test, and require domain, repository, auth, schema, concurrency, and streaming tests.
+Title: Expand the backend release gate with the new architecture
+Description: **Baseline established.** The pre-refactor suite now passes with known defects marked `xfail`. Add domain, repository, ownership, schema, concurrency, and streaming tests as those boundaries are introduced.
 Priority: P1
 Date_added: 2026-07-25
 

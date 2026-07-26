@@ -32,6 +32,29 @@ redlines, and user control over proposed changes.
 
 ## Success criteria
 
+### Immediate: learning and portfolio showcase
+
+The immediate goal is a credible GitHub repository that demonstrates hands-on
+exposure to modern application patterns. It does not need public-app scale, but
+the patterns should be real rather than decorative:
+
+- lightweight architecture, API, frontend, backlog, and testing docs remain
+  aligned with the code;
+- FastAPI routes delegate to typed services, repositories, and provider
+  adapters with clear state ownership;
+- SQLite schema changes are migrated and tested;
+- the web client uses typed API contracts and explicit workflow state;
+- demo and live behavior share schemas without sharing mutable data;
+- unit, contract, integration, typecheck, and build gates are runnable from a
+  fresh checkout;
+- known defects and validation boundaries are explicit; and
+- commits/increments are small enough for a reviewer to understand the design
+  progression.
+
+Success here means the repository honestly shows applied understanding and
+tradeoffs. It does not require adopting every fashionable tool or completing
+the limited-beta feature set.
+
 ### Personal production use
 
 - A review and its follow-up use the same submitted job description and resume.
@@ -44,6 +67,9 @@ redlines, and user control over proposed changes.
 
 ### Limited beta
 
+- The working product promise in `static/index.html` is fulfilled for the first
+  four steps: paste a job description, understand fit and gaps, answer targeted
+  follow-up questions, and produce a credible tailored ATS-oriented resume.
 - Two authorized users can run overlapping reviews without state leakage or
   corruption.
 - Each user can manage their own active resume.
@@ -848,29 +874,15 @@ Exit gate:
 - One user can create, refresh, and retrieve a durable review through the new
   API with no `temp/` dependency.
 
-### Phase 3 — Prove multi-user isolation
-
-Goal: make the domain slice safe for a handful of invited users.
-
-- Scope every repository operation by owner.
-- Add per-user resume create/update/archive behavior.
-- Add two-user authorization and overlapping-request tests.
-- Add optimistic version checks for answers/retries.
-- Validate SQLite concurrency/backup assumptions or move to Postgres.
-
-Exit gate:
-
-- Two users can run overlapping review and follow-up workflows with no
-  cross-user reads, writes, or state corruption.
-
-### Phase 4 — Simplify the frontend around the new API
+### Phase 3 — Simplify the frontend around the new API
 
 Goal: make the web application deliberate and restoreable, then retain Chrome
 as a thin platform shell if it remains a supported surface.
 
 - Split `extension-panel.tsx` into the product components and platform
   boundaries defined in the frontend refactoring plan.
-- Implement web and Chrome adapters for auth, storage, source URL, and shell.
+- Implement the web adapters for auth, storage, source URL, and shell; preserve
+  the narrow interfaces the later Chrome adapters will implement.
 - Add a typed API client for `/api/v1`.
 - Add typed handling for the common API error envelope.
 - Replace interacting workflow booleans with explicit workflow states.
@@ -893,7 +905,7 @@ Exit gate:
   smoke test.
 - Chrome-only code is confined to the Chrome platform and extension shell.
 
-### Phase 5 — Split and stream the LLM workflow
+### Phase 4 — Split and stream the LLM workflow
 
 Goal: improve time-to-value and reduce repeated tokens without weakening
 output quality.
@@ -917,6 +929,21 @@ Exit gate:
 - Reload/disconnect does not duplicate a completed call.
 - Token and latency measurements show improvement without material quality loss
   on the evaluation set.
+
+### Phase 5 — Prove multi-user isolation
+
+Goal: extend the personally useful workflow to a handful of invited users.
+
+- Scope every repository operation by owner.
+- Add per-user resume create/update/archive behavior.
+- Add two-user authorization and overlapping-request tests.
+- Add optimistic version checks for answers/retries.
+- Validate SQLite concurrency/backup assumptions or move to Postgres.
+
+Exit gate:
+
+- Two users can run overlapping review and follow-up workflows with no
+  cross-user reads, writes, or state corruption.
 
 ### Phase 6 — Remove compatibility paths and harden beta operations
 
@@ -958,6 +985,86 @@ Exit gate:
   components without adding Chrome conditionals to product code.
 
 ## Testing strategy
+
+### Testing approach
+
+Tests are decision and migration guardrails, not a coverage-maximization
+exercise. Protect behavior that matters to the user and contracts shared across
+components; avoid locking in global files, route-function structure, React
+component layout, or other implementation details we intend to replace.
+
+Use four distinct test types:
+
+| Test type | Purpose | Treatment |
+|---|---|---|
+| Characterization | Preserve valuable behavior that works today | Must pass before and after refactoring |
+| Known-defect regression | State the correct behavior for a confirmed defect | Mark strict `xfail`/todo with a reason; convert to passing in the increment that fixes it |
+| New-boundary unit/contract | Prove a service, repository, schema, state transition, or adapter as it is introduced | Add in the same change as the new boundary |
+| Production validation | Prove OAuth, hosting, filesystem, provider, SSE, and deployed-browser behavior | Never substitute mocks or unit tests for this evidence |
+
+Principles:
+
+- Write the behavioral assertion before changing the corresponding code.
+- Prefer small deterministic fixtures over production or personal data.
+- Keep all provider, Google, network, clock, and filesystem dependencies
+  controlled in unit tests.
+- Give each backend test isolated mutable paths or a transaction-scoped test
+  database; tests must not write repository `temp/` or user files.
+- Assert schemas, state transitions, ownership, and decision-critical values.
+  Avoid full-response snapshots that make harmless wording changes expensive.
+- Test demo and mocked-live responses against the same consumer contract.
+- Test failures and retries as first-class behavior, including the state left
+  behind after failure.
+- For multi-user behavior, test interleavings and forbidden access—not only two
+  sequential happy paths.
+- For streaming, test event ordering, partial chunks, disconnects, reconnects,
+  timeouts, and final durable state independently.
+- LLM quality is evaluated with representative fixtures and evidence checks;
+  unit tests prove orchestration and contracts, not whether a resume rewrite is
+  persuasive.
+
+Known-defect rules:
+
+- Every `xfail` or todo names the defect and corresponding backlog scope.
+- `strict=True` is used for pytest so an unexpected pass forces review.
+- Do not change an assertion merely to match incorrect current behavior.
+- Remove the marker in the same change that fixes the defect.
+- No new unexplained `xfail`, skipped test, or test todo enters the release
+  gate.
+
+Every increment should finish with:
+
+1. focused tests for the changed boundary;
+2. the complete backend and frontend unit/contract suites;
+3. typecheck and build for the supported web client;
+4. the increment's smallest relevant integration or browser smoke test;
+5. review of newly introduced skips, todos, warnings, and expected failures;
+   and
+6. an update to the living docs when a contract or decision changed.
+
+### Pre-refactor safety net
+
+Established on 2026-07-25:
+
+```text
+pytest -q
+cd BrowserExtension
+npm test
+npx tsc --noEmit
+npm run build
+```
+
+The initial backend suite isolates mutable files per test and covers prompt
+assembly, live/demo API behavior, response transformation, auth/authz, startup,
+failure paths, and deterministic redlines. Known defects are strict `xfail`
+tests so they do not block the baseline but will become passing regression
+tests when fixed.
+
+The initial frontend suite covers token storage/expiry, API request contracts,
+401 handling, Markdown cleanup, and redline transformations. The mixed-change
+parser defect is recorded as a test todo. Do not add broad component tests
+around the current monolithic panel; add them as product boundaries are
+extracted.
 
 ### Backend
 
@@ -1062,6 +1169,44 @@ Remaining:
 - What deletion controls should users receive during development?
 - What retention period replaces development-long persistence before use
   expands beyond the limited beta?
+
+## Readiness before implementation
+
+No further architecture design is required before Increment 1. Complete these
+short setup decisions first:
+
+1. **Create a recoverable baseline.** Review the dirty working tree and commit
+   or otherwise snapshot the documentation, tests, current provider change,
+   and unrelated user work before application refactoring begins.
+2. **Align sequence in both planning documents.** Reflect the chosen order:
+   personal correctness and demo, durable single-user review state, web
+   refactor, efficient/streaming LLM loop, then multi-user isolation.
+3. **Use the current demo as the acceptance scenario.** The checked-in demo
+   resume, job description, initial response, and follow-up response are the
+   initial end-to-end behavioral thread through the increments. Validate their
+   schema and internal consistency before treating them as the acceptance
+   baseline:
+   - `demo/resume_demo.txt`
+   - `demo/job_description_demo.txt`
+   - `demo/API_response_review_demo.json`
+   - `demo/API_response_review_add_info_demo.json`
+4. **Confirm the first-slice boundary.** The isolated demo slice changes no live
+   route or personal data until its schemas, service behavior, and tests pass.
+5. **Define “preserve” versus “replace.”** Preserve truthful analysis,
+   follow-up continuity, deterministic redlines, and user control. Treat the
+   current file layout, demo flags, route shapes, panel structure, and exact
+   model wording as replaceable.
+
+Decide these just in time rather than blocking Increment 1:
+
+- canonical web URL and deployment topology — before the web increment;
+- SQLite backup/deploy mechanics — before durable persistence is deployed;
+- exact Groq model, token/latency targets, and quality eval thresholds — before
+  the LLM increment;
+- polling versus SSE — after the hosting spike and before streaming work;
+- user-facing deletion and post-development retention — before limited beta;
+  and
+- whether the extension remains worth supporting — after web-beta learning.
 
 ## First implementation slice
 

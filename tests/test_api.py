@@ -1,179 +1,477 @@
-"""Unit tests for the backend module."""
+"""Characterization and regression tests for the current FastAPI workflow."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
 
 import pytest
-from backend import api
+from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
-from pathlib import Path
-from backend.security import verify_token
+
+from backend import api
 
 
-# Working files for pytest unit tests
-BASE_DIR = Path(__file__).resolve().parent
-TEST_RESUME_FILE = BASE_DIR / "user" / "test_resume.txt"
-TEST_ADDITIONAL_EXPERIENCE_FILE = BASE_DIR / "user" / "test_additional_experience.txt"
-TEST_OUTPUT_FROM_LLM_CURRENT_FILE = BASE_DIR / "temp_stub" / "test_LLM_response_current.json"
-TEST_USER_RESPONSE_FILE = BASE_DIR / "temp_stub" / "test_user_response.json"
-# Production temp files
-TEMP_DIR = BASE_DIR.parent / "temp"
-RESUME_BASELINE_FILE = TEMP_DIR / "resume_baseline.txt"
-RESUME_REVISED_FILE = TEMP_DIR / "resume_revised.txt"
-USER_RESPONSE_FILE = TEMP_DIR / "user_response.json"
-OUTPUT_FROM_LLM_PRIOR_FILE = TEMP_DIR / "LLM_response_prior.json"
-OUTPUT_FROM_LLM_CURRENT_FILE = TEMP_DIR / "LLM_response_current.json"
-JOB_DESCRIPTION_FILE = TEMP_DIR / "job_description.txt"
+def _extract_prompt_input(prompt: str) -> dict:
+    """Read JSON embedded by the isolated test prompt template."""
+    return json.loads(prompt.removeprefix("PROMPT\n").removesuffix("\nEND"))
 
 
-@pytest.fixture
-def test_client(monkeypatch):
-    """Create a test client for the FastAPI app."""
-    # Patch the verify_token that api.py calls directly
-    monkeypatch.setattr(api, "verify_token", lambda creds=None: {
-        "sub": "test-user-123",
-        "email": "test@example.com",
-        "email_verified": True,
-        "name": "Test User",
-    })
-
-    with TestClient(api.app) as c:
-        yield c
-
-
-def test_init_temp_folder_and_files(test_client):
-    """Test that temp folder and files are created."""
-    assert TEMP_DIR.exists()
-    assert RESUME_BASELINE_FILE.exists()
-    assert JOB_DESCRIPTION_FILE.exists()
-    assert not OUTPUT_FROM_LLM_CURRENT_FILE.exists()
-    assert not OUTPUT_FROM_LLM_PRIOR_FILE.exists()
-    assert not RESUME_REVISED_FILE.exists()
-    assert not USER_RESPONSE_FILE.exists()
+def _assert_review_contract(body: dict) -> None:
+    """Assert the current consumer-critical review response shape."""
+    assert set(body) >= {"Fit", "Gap_Map", "Questions", "Tailored_Resume"}
+    assert isinstance(body["Fit"]["score"], int)
+    assert isinstance(body["Fit"]["rationale"], str)
+    assert isinstance(body["Gap_Map"], list)
+    assert isinstance(body["Questions"], list)
+    assert isinstance(body["Tailored_Resume"], str)
+    for gap in body["Gap_Map"]:
+        assert set(gap) == {
+            "JD Requirement/Keyword",
+            "Present in Resume?",
+            "Where/Evidence",
+            "Gap handling",
+        }
 
 
-def test_get_job_description(test_client):
-    """Test /get_JD endpoint returns (currently demo) job description."""
-    response = test_client.post(
-        "/jobdescription",
-        json={"url": "https://example.com/job"}
-    )
+def test_health_contract(client: TestClient) -> None:
+    response = client.get("/health")
+
     assert response.status_code == 200
-    data_dict = response.json()
-    # check that content from demo job description file is returned
-    assert "CEO/Co-founder" in data_dict["job_description"]
+    assert response.json() == {"message": "Hello World"}
 
 
-def test_create_resume_diff():
-    """Test create_resume_diff creates correct diff output and file."""
-    baseline = "This is a text\nThis is a text on a new line"
-    revised = "This is a short text\nThis is gibberish on a new line"
-    expected_diff = '''This is a<span style="color:#008000"><add> short</add></span> text
-This is <span style="color:#c00000"><del>a text</del></span><span style="color:#008000"><add>gibberish</add></span> on a new line'''
-    actual_diff = api.create_resume_diff(baseline, revised)
-    assert actual_diff == expected_diff
+def test_request_validation_contract(client: TestClient) -> None:
+    response = client.post("/review", json={"job_description": "Missing URL"})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(error["loc"][-1] == "url" for error in detail)
 
 
-def test_create_review_prompt(monkeypatch):
-    """Test prompt template placeholders are replaced and data from previous
-     LLM output is read and injected into the prompt."""
-    job_description = "This the test job description"
-    resume = "This is a test resume"
-    additional_experience = "This is a test additional experience"
-    rationale = "This is a test rationale"
-    question2 = "Question2?"
-    answer3 = "Answer3"
+def test_lifespan_initializes_isolated_demo_baseline(
+    client: TestClient, isolated_paths: dict[str, Path]
+) -> None:
+    assert isolated_paths["resume_baseline_file"].read_text() == "DEMO RESUME"
+    assert (
+        isolated_paths["job_description_file"].read_text()
+        == "DEMO JOB DESCRIPTION"
+    )
 
-    monkeypatch.setattr(api, "RESUME_BASELINE_FILE", TEST_RESUME_FILE)
-    monkeypatch.setattr(api, "ADDITIONAL_EXPERIENCE_FILE", TEST_ADDITIONAL_EXPERIENCE_FILE)
-    monkeypatch.setattr(api, "OUTPUT_FROM_LLM_CURRENT_FILE", TEST_OUTPUT_FROM_LLM_CURRENT_FILE)
-    monkeypatch.setattr(api, "USER_RESPONSE_FILE", TEST_USER_RESPONSE_FILE)
-    prompt = api.create_review_prompt(job_description)
 
-    # test that placeholder is replaced with json content
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known bug: one missing file stops cleanup of every later stale file.",
+)
+def test_lifespan_removes_each_stale_file_independently(
+    isolated_paths: dict[str, Path],
+) -> None:
+    isolated_paths["resume_revised_file"].write_text("STALE REVISED")
+    isolated_paths["user_response_file"].write_text("STALE ANSWERS")
+    isolated_paths["output_prior_file"].write_text("STALE PRIOR")
+    isolated_paths["output_current_file"].unlink(missing_ok=True)
+
+    async def run_lifespan() -> None:
+        async with api.lifespan(api.app):
+            pass
+
+    asyncio.run(run_lifespan())
+
+    assert not isolated_paths["resume_revised_file"].exists()
+    assert not isolated_paths["user_response_file"].exists()
+    assert not isolated_paths["output_prior_file"].exists()
+
+
+def test_prompt_contains_only_required_state_when_optional_files_are_absent(
+    isolated_paths: dict[str, Path],
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("BASELINE")
+    isolated_paths["additional_experience_file"].unlink()
+
+    prompt_input = _extract_prompt_input(api.create_review_prompt("TARGET JOB"))
+
+    assert prompt_input == {
+        "Job_Description": "TARGET JOB",
+        "Resume": "BASELINE",
+    }
+
+
+def test_prompt_includes_additional_prior_and_answer_state(
+    isolated_paths: dict[str, Path],
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("BASELINE")
+    isolated_paths["output_current_file"].write_text(
+        json.dumps(
+            {
+                "Fit": {"score": 6, "rationale": "Prior rationale"},
+                "Gap_Map": [{"JD Requirement/Keyword": "Prior gap"}],
+                "Tailored_Resume": "ignored by prompt builder",
+            }
+        )
+    )
+    isolated_paths["user_response_file"].write_text(
+        json.dumps([{"question": "Question?", "answer": "Answer."}])
+    )
+
+    prompt_input = _extract_prompt_input(api.create_review_prompt("TARGET JOB"))
+
+    assert prompt_input["Job_Description"] == "TARGET JOB"
+    assert prompt_input["Resume"] == "BASELINE"
+    assert prompt_input["Additional_Info"] == "ADDITIONAL EXPERIENCE"
+    assert prompt_input["Fit"]["rationale"] == "Prior rationale"
+    assert prompt_input["Gap_Map"][0]["JD Requirement/Keyword"] == "Prior gap"
+    assert prompt_input["qa_pairs"][0]["answer"] == "Answer."
+    assert "Tailored_Resume" not in prompt_input
+
+
+def test_prompt_replaces_every_input_placeholder(
+    isolated_paths: dict[str, Path],
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("BASELINE")
+    isolated_paths["prompt_file"].write_text("{{INPUT}}\n{{INPUT}}")
+
+    prompt = api.create_review_prompt("TARGET JOB")
+
     assert "{{INPUT}}" not in prompt
-    # test that user data is read and injected correctly
-    assert resume in prompt
-    assert additional_experience in prompt
-    assert job_description in prompt
-    # test that data from previous LLM output is parsed and injected
-    assert rationale in prompt
-    assert question2 in prompt
-    assert answer3 in prompt
+    assert prompt.count('"Job_Description": "TARGET JOB"') == 2
 
 
-def test_generate_review_demo(test_client, monkeypatch):
-    """Test /generate/review endpoint returns demo JSON."""
-    response = test_client.post(
-        "/review",
-        json={
-            "job_description": "fake job description for demo",
-            "save_output": True,
-            "url": "https://demo.com/bestjobever",
-            "demo": True
-        }
+def test_job_description_endpoint_currently_returns_seeded_demo(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/jobdescription",
+        json={"url": "https://example.com/job", "demo": False},
     )
+
     assert response.status_code == 200
-    data_dict = response.json()
-    assert "Tailored_Resume" in data_dict
-    # check that content from demo LLM response file is returned
-    assert "Jane Doe" in data_dict["Tailored_Resume"]
+    assert response.json() == {"job_description": "DEMO JOB DESCRIPTION"}
 
 
-def test_generate_review(test_client, monkeypatch):
-    """Test /generate/review endpoint parses the LLM response and injects
-    a diff resume."""
-    def mock_prompt_llm(prompt: str) -> str:
-        return TEST_OUTPUT_FROM_LLM_CURRENT_FILE.read_text()
-    monkeypatch.setattr(api, "prompt_llm", mock_prompt_llm)
+def test_demo_review_is_deterministic_and_skips_llm(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_if_called(prompt: str) -> str:
+        raise AssertionError("Demo mode must not call the LLM")
 
-    response = test_client.post(
-        "/review",
-        json={
-            "job_description": "This the test job description",
-            "url": "https://example.com/bestjobever",
-            "demo": False
-        }
-    )
-    assert response.status_code == 200
-    data_dict = response.json()
-    # check that content from test LLM response (mock_prompt_llm)file is returned
-    assert data_dict["Fit"]["score"] == 10
-    assert data_dict["Gap_Map"][1]["JD Requirement/Keyword"] == "Test Requirement1"
+    monkeypatch.setattr(api, "prompt_llm", fail_if_called)
+    payload = {
+        "job_description": "ignored demo input",
+        "url": "https://example.com/demo",
+        "demo": True,
+    }
+
+    first = client.post("/review", json=payload)
+    second = client.post("/review", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    _assert_review_contract(first.json())
+    assert first.json()["Fit"]["score"] == 7
 
 
-def test_process_questions_and_answers_demo(test_client, monkeypatch):
-    """Test /questions endpoint creates an updated review off user's answers."""
-    response = test_client.post(
+def test_demo_follow_up_is_deterministic_and_skips_llm(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_if_called(prompt: str) -> str:
+        raise AssertionError("Demo mode must not call the LLM")
+
+    monkeypatch.setattr(api, "prompt_llm", fail_if_called)
+    response = client.post(
         "/questions",
         json={
-            "qa_pairs": [
-                {"question": "Question1?", "answer": "Answer1"},
-                {"question": "Question2?", "answer": "Answer2"}
-            ],
-            "demo": True
+            "qa_pairs": [{"question": "Question?", "answer": "Answer."}],
+            "demo": True,
         },
     )
+
     assert response.status_code == 200
-    data_dict = response.json()
-    # check that content from demo LLM response file is returned
-    assert data_dict["Fit"]["score"] == 8
-    assert data_dict["Questions"][0] == "For the ML work at HomeQuest and Financia: what model types/approaches and frameworks were used (e.g., recommenders, NLP, TensorFlow, PyTorch), team size you founded/led, and a measurable outcome (CTR, retention, revenue lift)?"
+    _assert_review_contract(response.json())
+    assert response.json()["Fit"]["score"] == 8
 
 
-def test_process_questions_and_answers(test_client, monkeypatch):
-    """Test /questions endpoint creates an updated review off user's answers."""
-    # TODO: Implement a non-demo test once we have a suitable stubbed LLM response file
-    assert False
-    return
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known bug: demo resume load overwrites the shared live baseline.",
+)
+def test_demo_resume_load_does_not_mutate_live_baseline(
+    client: TestClient, isolated_paths: dict[str, Path]
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("LIVE BASELINE")
+
+    response = client.get("/resume", params={"command": "load", "demo": True})
+
+    assert response.status_code == 200
+    assert isolated_paths["resume_baseline_file"].read_text() == "LIVE BASELINE"
 
 
-def test_manage_resume(test_client, monkeypatch):
-    """Test /resume endpoint loads and saves resume files."""
-    resume = "This is a test resume"
-    monkeypatch.setattr(api, "RESUME_FILE", TEST_RESUME_FILE)
-    response = test_client.get(
+def test_live_review_parses_output_saves_plain_resume_and_returns_redline(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("LIVE RESUME")
+    llm_response = isolated_paths["llm_response"]
+    monkeypatch.setattr(api, "prompt_llm", lambda prompt: json.dumps(llm_response))
+
+    response = client.post(
+        "/review",
+        json={
+            "job_description": "TARGET JOB",
+            "url": "https://example.com/job",
+            "demo": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_review_contract(body)
+    assert body["Fit"] == llm_response["Fit"]
+    assert body["Gap_Map"] == llm_response["Gap_Map"]
+    assert body["Questions"] == llm_response["Questions"]
+    assert "<add> improved</add>" in body["Tailored_Resume"]
+    assert (
+        isolated_paths["resume_revised_file"].read_text()
+        == llm_response["Tailored_Resume"]
+    )
+    assert json.loads(isolated_paths["output_current_file"].read_text()) == llm_response
+
+
+def test_live_review_rotates_prior_raw_response(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("LIVE RESUME")
+    isolated_paths["output_current_file"].write_text('{"previous": true}')
+    monkeypatch.setattr(
+        api, "prompt_llm", lambda prompt: json.dumps(isolated_paths["llm_response"])
+    )
+
+    response = client.post(
+        "/review",
+        json={
+            "job_description": "TARGET JOB",
+            "url": "https://example.com/job",
+        },
+    )
+
+    assert response.status_code == 200
+    assert json.loads(isolated_paths["output_prior_file"].read_text()) == {
+        "previous": True
+    }
+
+
+def test_provider_exception_maps_to_bad_gateway(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        api, "prompt_llm", lambda prompt: (_ for _ in ()).throw(TimeoutError("slow"))
+    )
+
+    response = client.post(
+        "/review",
+        json={
+            "job_description": "TARGET JOB",
+            "url": "https://example.com/job",
+        },
+    )
+
+    assert response.status_code == 502
+    assert "OpenAI call failed" in response.json()["detail"]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Planned contract: provider exception details must not be returned to clients.",
+)
+def test_provider_exception_does_not_leak_internal_detail(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    secret_detail = "provider request included private-resume-text"
+    monkeypatch.setattr(
+        api,
+        "prompt_llm",
+        lambda prompt: (_ for _ in ()).throw(RuntimeError(secret_detail)),
+    )
+
+    response = client.post(
+        "/review",
+        json={
+            "job_description": "TARGET JOB",
+            "url": "https://example.com/job",
+        },
+    )
+
+    assert response.status_code == 502
+    assert secret_detail not in response.text
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known bug: invalid model output replaces the prior current response.",
+)
+def test_invalid_llm_json_does_not_replace_prior_valid_state(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prior = json.dumps(isolated_paths["llm_response"])
+    isolated_paths["output_current_file"].write_text(prior)
+    monkeypatch.setattr(api, "prompt_llm", lambda prompt: "not-json")
+
+    response = client.post(
+        "/review",
+        json={
+            "job_description": "TARGET JOB",
+            "url": "https://example.com/job",
+        },
+    )
+
+    assert response.status_code >= 400
+    assert isolated_paths["output_current_file"].read_text() == prior
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known bug: missing required model fields replace prior valid state.",
+)
+def test_missing_tailored_resume_does_not_replace_prior_valid_state(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prior = json.dumps(isolated_paths["llm_response"])
+    isolated_paths["output_current_file"].write_text(prior)
+    monkeypatch.setattr(
+        api,
+        "prompt_llm",
+        lambda prompt: json.dumps(
+            {"Fit": {"score": 8, "rationale": "Incomplete response"}}
+        ),
+    )
+
+    response = client.post(
+        "/review",
+        json={
+            "job_description": "TARGET JOB",
+            "url": "https://example.com/job",
+        },
+    )
+
+    assert response.status_code >= 400
+    assert isolated_paths["output_current_file"].read_text() == prior
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known bug: follow-up reads the startup demo job instead of the submitted job.",
+)
+def test_follow_up_uses_original_submitted_job_description(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("LIVE RESUME")
+    captured_inputs: list[dict] = []
+
+    def capture_prompt(prompt: str) -> str:
+        captured_inputs.append(_extract_prompt_input(prompt))
+        return json.dumps(isolated_paths["llm_response"])
+
+    monkeypatch.setattr(api, "prompt_llm", capture_prompt)
+    first = client.post(
+        "/review",
+        json={
+            "job_description": "ORIGINAL TARGET JOB",
+            "url": "https://example.com/job",
+        },
+    )
+    follow_up = client.post(
+        "/questions",
+        json={
+            "qa_pairs": [{"question": "Question?", "answer": "Answer."}],
+            "demo": False,
+        },
+    )
+
+    assert first.status_code == 200
+    assert follow_up.status_code == 200
+    assert captured_inputs[-1]["Job_Description"] == "ORIGINAL TARGET JOB"
+    assert captured_inputs[-1]["qa_pairs"][0]["answer"] == "Answer."
+
+
+def test_resume_load_copies_user_resume_to_working_baseline(
+    client: TestClient, isolated_paths: dict[str, Path]
+) -> None:
+    response = client.get(
         "/resume",
-        params={"command": "load"},
-        headers={"Authorization": "Bearer test-token"})
+        params={"command": "load", "demo": False},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
     assert response.status_code == 200
-    data_dict = response.json()
-    # check that content from the test resume file is returned
-    assert data_dict["resume"] == resume
+    assert response.json() == {"resume": "LIVE RESUME"}
+    assert isolated_paths["resume_baseline_file"].read_text() == "LIVE RESUME"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Planned API contract: invalid commands should use an HTTP error.",
+)
+def test_invalid_resume_command_returns_client_error(client: TestClient) -> None:
+    response = client.get(
+        "/resume",
+        params={"command": "delete", "demo": False},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_protected_review_returns_401_when_authentication_fails(
+    isolated_paths: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def reject(creds=None):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+
+    monkeypatch.setattr(api, "verify_token", reject)
+    with TestClient(api.app, raise_server_exceptions=False) as unauthenticated_client:
+        response = unauthenticated_client.post(
+            "/review",
+            json={
+                "job_description": "TARGET JOB",
+                "url": "https://example.com/job",
+            },
+        )
+
+    assert response.status_code == 401
+
+
+def test_protected_review_returns_403_when_authorization_fails(
+    isolated_paths: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api, "verify_token", lambda creds=None: {"email": "no@example.com"})
+
+    def forbid(claims):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized.",
+        )
+
+    monkeypatch.setattr(api, "check_authorized_user", forbid)
+    with TestClient(api.app, raise_server_exceptions=False) as forbidden_client:
+        response = forbidden_client.post(
+            "/review",
+            json={
+                "job_description": "TARGET JOB",
+                "url": "https://example.com/job",
+            },
+        )
+
+    assert response.status_code == 403
