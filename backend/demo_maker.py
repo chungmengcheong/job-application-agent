@@ -39,19 +39,32 @@ def create_prompt_json_input():
     json_file.write_text(json.dumps(input_dict, indent=4))
 
 
-def create_api_response(path_file: Path):
-    """Create the API response JSON for demo."""
+def create_call1_api_response(path_file: Path):
+    """Create the Call 1 (analysis and questions) demo API response JSON."""
     if not OUTPUT_FROM_LLM_CURRENT_FILE.exists():
         print(f"Error: OUTPUT_FROM_LLM_CURRENT_FILE does not exist.")
         return
-
-    api_response_dict = {}
 
     LLM_response = json.loads(OUTPUT_FROM_LLM_CURRENT_FILE.read_text())
     api_response_dict = {
         "Fit": LLM_response["Fit"],
         "Gap_Map": LLM_response["Gap_Map"],
-        "Questions": LLM_response["Questions"]
+        "Questions": LLM_response["Questions"],
+    }
+
+    path_file.write_text(json.dumps(api_response_dict, indent=4))
+
+
+def create_call2_api_response(path_file: Path):
+    """Create the Call 2 (revised analysis and tailored resume) demo API response JSON."""
+    if not OUTPUT_FROM_LLM_CURRENT_FILE.exists():
+        print(f"Error: OUTPUT_FROM_LLM_CURRENT_FILE does not exist.")
+        return
+
+    LLM_response = json.loads(OUTPUT_FROM_LLM_CURRENT_FILE.read_text())
+    api_response_dict = {
+        "Fit": LLM_response["Fit"],
+        "Gap_Map": LLM_response["Gap_Map"],
     }
 
     revised_resume = LLM_response["Tailored_Resume"]
@@ -64,8 +77,8 @@ def create_api_response(path_file: Path):
 if __name__ == "__main__":
     print("Demo file maker")
     print("1. Create JSON input for LLM ")
-    print("2. Create API response for first review")
-    print("3. Create API response for review with additional info")
+    print("2. Create Call 1 API response (analysis and questions)")
+    print("3. Create Call 2 API response (revised analysis and tailored resume)")
     print()
     choice = input("What do you want to do? ")
 
@@ -73,9 +86,9 @@ if __name__ == "__main__":
         case "1":
             create_prompt_json_input()
         case "2":
-            create_api_response(RESPONSE_REVIEW_DEMO_FILE)
+            create_call1_api_response(RESPONSE_REVIEW_DEMO_FILE)
         case "3":
-            create_api_response(RESPONSE_REVIEW_ADD_INFO_DEMO_FILE)
+            create_call2_api_response(RESPONSE_REVIEW_ADD_INFO_DEMO_FILE)
         case _:
             print("Invalid choice")
 

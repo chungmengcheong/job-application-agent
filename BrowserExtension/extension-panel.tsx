@@ -41,7 +41,8 @@ function isBrowserExtension(): boolean {
 }
 
 interface ReviewData {
-  Tailored_Resume: string
+  // Present only after Call 2 (POST /questions); absent after Call 1.
+  Tailored_Resume?: string
   Fit: {
     score: number
     rationale: string
@@ -52,7 +53,8 @@ interface ReviewData {
     "Where/Evidence": string
     "Gap handling": string
   }>
-  Questions: string[]
+  // Present only after Call 1 (POST /review); absent after Call 2.
+  Questions?: string[]
 }
 
 export default function Component() {
@@ -403,8 +405,10 @@ useEffect(() => {
     return "bg-red-800 text-white"
   }
 
-  // Helper function to process API response and update UI
-  const handleApiResponse = async (apiCall: Promise<any>) => {
+  // Helper function to process API response and update UI.
+  // Call 1 (/review) returns Fit/Gap_Map/Questions with no Tailored_Resume;
+  // Call 2 (/questions) returns Fit/Gap_Map/Tailored_Resume with no Questions.
+  const handleApiResponse = async (apiCall: Promise<any>, expectedCall: "call1" | "call2") => {
     setError(null)
 
     try {
@@ -421,8 +425,11 @@ useEffect(() => {
         if (!result.Gap_Map || !Array.isArray(result.Gap_Map)) {
           console.log("[v0] Warning: Invalid Gap_Map in response")
         }
-        if (!result.Questions || !Array.isArray(result.Questions)) {
-          console.log("[v0] Warning: Invalid Questions in response")
+        if (expectedCall === "call1" && !Array.isArray(result.Questions)) {
+          console.log("[v0] Warning: Invalid Questions in Call 1 response")
+        }
+        if (expectedCall === "call2" && typeof result.Tailored_Resume !== "string") {
+          console.log("[v0] Warning: Invalid Tailored_Resume in Call 2 response")
         }
 
         console.log("[v0] Setting review state...")
@@ -476,7 +483,7 @@ useEffect(() => {
           url: activeTabUrl,
           demo: demoState,
         });
-        await handleApiResponse(Promise.resolve(response));
+        await handleApiResponse(Promise.resolve(response), "call1");
       } catch (err: any) {
         if (!handleAuthError(err)) {
           throw err; // rethrow non-auth errors
@@ -509,7 +516,8 @@ useEffect(() => {
         postQuestions({
           qa_pairs,
           demo: demoState
-        })
+        }),
+        "call2"
       );
 
       if (result) {
@@ -788,11 +796,11 @@ useEffect(() => {
 
                     {showReviewTooltip && (
                       <Tooltip title="Example resume review" onClose={() => setShowReviewTooltip(false)}>
-                        I assessed and scored your qualifications against the job's "must-haves". See "Resume" tab for a
-                        tailored resume you can use.
+                        I assessed and scored your qualifications against the job's "must-haves".
                         <br />
                         <br />I have some optional questions to find out if you have other relevant experience not
-                        currently listed in your resume. I can use this info to update my review and resume suggestions.
+                        currently listed in your resume. Answer and submit them to get a tailored resume in the
+                        "Resume" tab.
                       </Tooltip>
                     )}
 
@@ -835,65 +843,71 @@ useEffect(() => {
                         </div>
                       </div>
 
-                      <div>
-                        <p className="text-base font-medium">Additional info for AI reviewer</p>
-                        <p className="text-s text-muted-foreground mb-3">
-                          (Optional) I can provide an even more tailored resume if you can have additional relevant
-                          experiences and skills. Feel free to skip (all) questions if not relevant.&nbsp;
-                        </p>
+                      {review.Questions && review.Questions.length > 0 ? (
+                        <>
+                          <div>
+                            <p className="text-base font-medium">Additional info for AI reviewer</p>
+                            <p className="text-s text-muted-foreground mb-3">
+                              (Optional) I can provide an even more tailored resume if you can have additional relevant
+                              experiences and skills. Feel free to skip (all) questions if not relevant.&nbsp;
+                            </p>
 
-                        {authError && (
-                          <div className="p-3 mb-3 bg-red-50 border border-red-200 rounded-md">
-                            <p className="text-sm text-red-600">{authError}</p>
-                          </div>
-                        )}
-
-                        <div className="space-y-4">
-                          {review.Questions && review.Questions.length > 0 ? (
-                            review.Questions.map((question, index) => (
-                              <div key={index} className="space-y-2">
-                                <p className="text-s font-normal">
-                                  {index + 1}. {question}
-                                </p>
-                                <Textarea
-                                  placeholder="Your answer..."
-                                  value={questionAnswers[index] || ""}
-                                  onChange={(e) =>
-                                    setQuestionAnswers((prev) => ({
-                                      ...prev,
-                                      [index]: e.target.value,
-                                    }))
-                                  }
-                                  className="min-h-[60px] text-s"
-                                />
+                            {authError && (
+                              <div className="p-3 mb-3 bg-red-50 border border-red-200 rounded-md">
+                                <p className="text-sm text-red-600">{authError}</p>
                               </div>
-                            ))
-                          ) : (
-                            <p className="text-s text-muted-foreground">No additional questions</p>
-                          )}
-                        </div>
-                      </div>
+                            )}
 
-                      <div className="mt-4 pt-4 border-t bg-background">
-                        <Button
-                          onClick={handleSubmitQuestions}
-                          disabled={isSubmittingQuestions}
-                          className="w-full"
-                          variant="secondary"
-                        >
-                          {isSubmittingQuestions ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Submitting...
-                            </>
-                          ) : (
-                            <>
-                              <Send className="w-4 h-4 mr-2" />
-                              Submit additional information
-                            </>
-                          )}
-                        </Button>
-                      </div>
+                            <div className="space-y-4">
+                              {review.Questions.map((question, index) => (
+                                <div key={index} className="space-y-2">
+                                  <p className="text-s font-normal">
+                                    {index + 1}. {question}
+                                  </p>
+                                  <Textarea
+                                    placeholder="Your answer..."
+                                    value={questionAnswers[index] || ""}
+                                    onChange={(e) =>
+                                      setQuestionAnswers((prev) => ({
+                                        ...prev,
+                                        [index]: e.target.value,
+                                      }))
+                                    }
+                                    className="min-h-[60px] text-s"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="mt-4 pt-4 border-t bg-background">
+                            <Button
+                              onClick={handleSubmitQuestions}
+                              disabled={isSubmittingQuestions}
+                              className="w-full"
+                              variant="secondary"
+                            >
+                              {isSubmittingQuestions ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Submitting...
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="w-4 h-4 mr-2" />
+                                  Submit additional information
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </>
+                      ) : review.Tailored_Resume ? (
+                        <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                          <p className="text-sm text-green-800">
+                            Your tailored resume is ready — see the "Resume" tab.
+                          </p>
+                        </div>
+                      ) : null}
 
                     </div>
                   </ScrollArea>

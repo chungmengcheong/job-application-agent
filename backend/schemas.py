@@ -38,14 +38,23 @@ class GapItem(BaseModel):
     gap_handling: str = Field(alias="Gap handling")
 
 
-class ReviewResult(BaseModel):
-    """The fit/gaps/questions/tailored-resume shape shared by every review response."""
+class AnalysisResult(BaseModel):
+    """Call 1 output: fit, gaps, and targeted questions. No tailored resume yet."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     Fit: Fit
     Gap_Map: list[GapItem]
     Questions: list[str]
+
+
+class ReviewResult(BaseModel):
+    """Call 2 output: revised fit, revised gaps, and the tailored resume."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    Fit: Fit
+    Gap_Map: list[GapItem]
     Tailored_Resume: str
 
 

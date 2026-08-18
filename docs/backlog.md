@@ -16,66 +16,9 @@ the item:
 Entries marked **Confirmed** are supported by current code, tests, or build
 configuration. **Validation risk** requires a live check.
 
-## Increment 1.5 — Adopt the two-call Groq workflow
-
-Goal: Make the user journey match the evidence-gathering logic and make Groq the
-single supported provider.
-
-### Implement Call 1: analysis and questions
-
-Input the selected resume and job description. Return validated fit, gaps, and
-targeted questions. Do not generate a tailored resume in Call 1.
-
-gates_release_type: personal
-
-### Implement Call 2: revised analysis and tailored resume
-
-Input the same resume, the same job description, and the user's answers. Return
-validated revised fit, revised gaps, and a tailored resume. Generate the redline
-deterministically only after the complete resume validates.
-
-gates_release_type: personal
-
-### Update the web workflow and tests
-
-Show fit, gaps, and questions after Call 1. Show revised fit, revised gaps, and
-the tailored redline after Call 2. Test both calls with injected responses; the
-normal suite makes no paid calls.
-
-gates_release_type: personal
-
-Exit gate:
-
-- Call 1 returns only fit, gaps, and targeted questions.
-- Call 2 uses the original resume and job description plus answers and returns
-  revised fit, revised gaps, and a tailored resume.
-- The canned demo remains deterministic and makes no LLM call.
-
-## Increment 2 — Introduce durable users, resumes, and reviews
+## Increment 2 — Introduce the Review service and durable API 
 
 Goal: Replace global workflow files with a small durable domain model.
-
-### Add SQLite configuration and migrations
-
-Create `users`, `resumes`, and `reviews` tables with foreign keys, transaction
-boundaries, and a development-safe initialization command.
-
-gates_release_type: beta
-
-### Add internal users derived from verified identity
-
-Resolve or create a user from the verified Google `sub`. Use email for display
-and allowlist audit, never as the ownership key.
-
-gates_release_type: beta
-
-### Support stored resumes and one active selection
-
-Allow each user to create, list, retrieve, update, and activate stored resumes.
-Exactly one stored resume may be active at a time. Do not add archive or resume
-version history yet.
-
-gates_release_type: personal
 
 ### Make Review the durable unit of work
 
@@ -87,10 +30,8 @@ gates_release_type: personal
 
 ### Add a thin ReviewService and SQLite store
 
-FastAPI routes own HTTP concerns; `ReviewService` owns the two-call workflow;
-one store module owns SQLite operations; the existing deterministic redline
-function remains a function. Do not add repository hierarchies, separate
-artifact tables, model-call tables, or optimistic versions.
+FastAPI routes own HTTP concerns; `ReviewService` owns the two-call workflow;the existing deterministic redline
+function remains a function. 
 
 gates_release_type: personal
 
@@ -123,44 +64,8 @@ gates_release_type: personal
 
 Exit gate:
 
-- One authenticated user can manage stored resumes and select one as active.
-- A review and its follow-up are durable and recoverable by review ID.
 - Both calls use the immutable resume snapshot and job description.
 - The supported live workflow has no `temp/` dependency.
-
-## Increment 2.5 — Add authenticated one-time trial onboarding
-
-Goal: Let a new visitor obtain one custom review without turning the canned demo
-into a live unauthenticated provider endpoint.
-
-### Collect trial inputs ephemerally
-
-Allow a visitor to enter a resume and job description before authentication.
-Keep them only in browser memory. Make no LLM call and persist no sensitive input.
-
-gates_release_type: beta
-
-### Require authentication and explicit submission
-
-After authentication, show what will be submitted and require an explicit
-action. Create the internal user, store the resume as active, create the owned
-review, and then run the normal two-call workflow.
-
-gates_release_type: beta
-
-### Define one-time eligibility and abuse controls
-
-Specify what makes the trial one-time and apply input, token, timeout, and rate
-limits. Do not weaken ownership or create an unauthenticated Groq endpoint.
-
-gates_release_type: beta
-
-Exit gate:
-
-- No sensitive trial input is persisted and no provider call occurs before
-  authentication and explicit submission.
-- The resulting resume and review are owned by the newly created user.
-- The canned demo remains a separate fixture-based experience.
 
 ## Increment 3 — Simplify the web client around the durable API
 
@@ -210,6 +115,71 @@ Exit gate:
 - Refresh restores a durable review from the backend.
 - The supported web build passes tests, typecheck, lint, build, and smoke test.
 - Supported web code has no Chrome platform abstraction or behavior.
+
+## Increment 3.5 — Add authenticated one-time trial onboarding
+
+Goal: Let a new visitor obtain one custom review without turning the canned demo
+into a live unauthenticated provider endpoint.
+
+### Add SQLite configuration and migrations
+
+Create `users`, `resumes`, and `reviews` tables with foreign keys, transaction
+boundaries, and a development-safe initialization command.
+
+gates_release_type: beta
+
+### Add SQLite store
+
+One store module owns SQLite operations; Do not add repository hierarchies, separate
+artifact tables, model-call tables, or optimistic versions.
+
+gates_release_type: personal
+
+### Support stored resumes and one active selection
+
+Allow each user to create, list, retrieve, update, and activate stored resumes.
+Exactly one stored resume may be active at a time. Do not add archive or resume
+version history yet.
+
+gates_release_type: personal
+
+### Add internal users derived from verified identity
+
+Resolve or create a user from the verified Google `sub`. Use email for display
+and allowlist audit, never as the ownership key.
+
+gates_release_type: beta
+
+### Collect trial inputs ephemerally
+
+Allow a visitor to enter a resume and job description before authentication.
+Keep them only in browser memory. Make no LLM call and persist no sensitive input.
+
+gates_release_type: beta
+
+### Require authentication and explicit submission
+
+After authentication, show what will be submitted and require an explicit
+action. Create the internal user, store the resume as active, create the owned
+review, and then run the normal two-call workflow.
+
+gates_release_type: beta
+
+### Define one-time eligibility and abuse controls
+
+Specify what makes the trial one-time and apply input, token, timeout, and rate
+limits. Do not weaken ownership or create an unauthenticated Groq endpoint.
+
+gates_release_type: beta
+
+Exit gate:
+
+- One authenticated user can manage stored resumes and select one as active.
+- A review and its follow-up are durable and recoverable by review ID.
+- No sensitive trial input is persisted and no provider call occurs before authentication and explicit submission.
+- The resulting resume and review are owned by the newly created user.
+- The canned demo remains a separate fixture-based experience.
+
 
 ## Increment 4 — Validate the production boundary
 

@@ -17,8 +17,8 @@ entry but does not partition the global workflow files by user.
 | Route | Current purpose | Material issue |
 |---|---|---|
 | `POST /jobdescription` | Return the demo-seeded job description | URL extraction is not implemented |
-| `POST /review` | Generate fit, gaps, questions, and tailored resume | Does not save the submitted job description |
-| `POST /questions` | Regenerate the review using answers | Rereads the global demo-seeded job description |
+| `POST /review` | Call 1: generate fit, gaps, and questions | No tailored resume yet by design |
+| `POST /questions` | Call 2: regenerate fit/gaps and produce the tailored resume using answers | Uses the persisted job description, not a resubmission |
 | `GET /resume` | Load/save/delete the single resume | Demo load can alter the shared baseline |
 | `GET /oauth2cb` | Legacy Chrome OAuth bounce | Deprecated with the extension |
 
@@ -32,15 +32,17 @@ GET /resume?command=load
     -> copy one user resume to temp/resume_baseline.txt
 
 POST /review(job description)
-    -> build one combined prompt
-    -> provider returns fit + gaps + questions + tailored resume
-    -> rotate global response files
-    -> generate deterministic redline
+    -> persist the submitted job description
+    -> build the Call 1 prompt (resume + job description)
+    -> provider returns fit + gaps + questions
+    -> save the raw response for Call 2 to read
 
 POST /questions(answers)
     -> write global answers
-    -> reread temp/job_description.txt
-    -> repeat the combined review call
+    -> reread the persisted job description
+    -> build the Call 2 prompt (resume + job description + Call 1's fit/gaps + answers)
+    -> provider returns revised fit + revised gaps + tailored resume
+    -> generate deterministic redline
 ```
 
 This design has no review ID or durable status. If a request times out, the
@@ -74,68 +76,82 @@ Minimum response schemas cover fit, gaps, questions, tailored resume, and safe
 errors only. Streaming, artifact versions, and future table shapes do not enter
 these contracts.
 
-## Increment 1.5 two-call contract
+## Increment 1.5 two-call contract — implemented
 
 Groq becomes the only supported provider through one thin, config-driven
-injectable client; see Configuration below.
+injectable client; see Configuration below. The two calls run on the existing
+`POST /review` and `POST /questions` routes; Increment 1.5 did not introduce
+new routes or a new request shape — that is `/api/v1`, below.
 
-### Call 1: analysis and questions
+Field names stay today's PascalCase (`Fit`, `Gap_Map`, `Questions`,
+`Tailored_Resume`) rather than the lowercase shape this section showed before
+implementation. Explicit user decision (2026-08-18): renaming to snake_case now
+and again at the `/api/v1` cutover was judged worse than renaming once, at that
+boundary; see docs/backlog-done.md's Increment 1.5 entry.
 
-Input:
+### Call 1: analysis and questions — `POST /review`
+
+Request (`JobListing`, unchanged from Increment 1):
 
 ```json
 {
-  "resume": "...",
-  "job_description": "..."
+  "job_description": "...",
+  "url": "https://example.com/job",
+  "demo": false
 }
 ```
 
-Validated output:
+The resume comes from the server-side working baseline, not the request body.
+
+Validated output (`AnalysisResult`):
 
 ```json
 {
-  "fit": {
+  "Fit": {
     "score": 0,
     "rationale": "..."
   },
-  "gaps": [],
-  "questions": []
+  "Gap_Map": [],
+  "Questions": []
 }
 ```
 
-Call 1 does not return a tailored resume.
+Call 1 does not return a tailored resume; `Tailored_Resume` is not a field on
+this schema.
 
-### Call 2: revised analysis and tailored resume
+### Call 2: revised analysis and tailored resume — `POST /questions`
 
-Input:
+Request (`QuestionAnswers`, unchanged from Increment 1):
 
 ```json
 {
-  "resume": "same resume used in Call 1",
-  "job_description": "same job description used in Call 1",
   "qa_pairs": [
     {
       "question": "...",
       "answer": "..."
     }
-  ]
+  ],
+  "demo": false
 }
 ```
 
-Validated output:
+The server rebuilds the Call 2 prompt from the same resume baseline, the same
+job description Call 1 persisted, Call 1's raw fit/gaps, and these answers.
+
+Validated output (`ReviewResult`):
 
 ```json
 {
-  "fit": {
+  "Fit": {
     "score": 0,
     "rationale": "..."
   },
-  "gaps": [],
-  "tailored_resume": "..."
+  "Gap_Map": [],
+  "Tailored_Resume": "..."
 }
 ```
 
-Call 2 returns revised fit and gaps. It need not return another question set.
+Call 2 returns revised fit and gaps; `Questions` is not a field on this schema.
 The server creates redline markup only after the complete tailored resume
 validates.
 

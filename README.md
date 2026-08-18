@@ -48,3 +48,26 @@ Note:
    - cd ~/airecruitingagent
    - git pull origin main
    - pa website reload --domain airecruitingagent.pythonanywhere.com
+
+### Deploying locally
+
+1. Backend (from the repo root):
+
+```
+source .venv/bin/activate   # if you're using the repo's venv 
+uvicorn backend.api:app --reload --port 8000 
+```
+
+--port 8000 matters: the frontend's "local" mode is hardcoded to http://127.0.0.1:8000 (BrowserExtension/lib/api.ts). Your .env already has LLM_API_KEY, GOOGLE_WEB_CLIENT_ID ALLOWED_EMAILS etc. set, so this should just work.
+
+2. Frontend — it's a Next.js app, so next dev is the local run, no build/deploy needed:
+
+```
+  cd BrowserExtension
+  npm install   # only if you haven't already
+  npm run dev
+```
+
+  This serves at http://localhost:3000, and the backend's CORS config already whitelists that origin.
+
+3. Point the web app at your local backend: open http://localhost:3000 (or /panel), and click the small "API: Cloud" pill near the top of the panel to flip it to "API:  Local". 

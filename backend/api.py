@@ -13,7 +13,7 @@ import json
 from dotenv import load_dotenv
 from backend.llm_client import LLMClient
 from backend.redline import redline_diff
-from backend.schemas import JobListing, QuestionAnswers, ReviewResult, Url
+from backend.schemas import AnalysisResult, JobListing, QuestionAnswers, ReviewResult, Url
 from backend.security import check_authorized_user, verify_token, security
 from backend.security import router as oauth_router
 
@@ -33,8 +33,8 @@ STATIC_DIR = BASE_DIR / "static"
 RESUME_FILE = USER_DIR / "resume.txt"
 ADDITIONAL_EXPERIENCE_FILE = USER_DIR / "additional_candidate_info.txt"
 # Prompt templates
-PROMPT_RESUME_REVIEW_FILE = PROMPT_DIR / "prompt_resume_review_GOLD.txt"
-PROMPT_DIFF_FILE = PROMPT_DIR / "prompt_resume_diff_GOLD.txt"
+PROMPT_CALL1_ANALYSIS_FILE = PROMPT_DIR / "prompt_call1_analysis_GOLD.txt"
+PROMPT_CALL2_TAILOR_FILE = PROMPT_DIR / "prompt_call2_tailor_GOLD.txt"
 # Temp working files
 RESUME_BASELINE_FILE = TEMP_DIR / "resume_baseline.txt"
 RESUME_REVISED_FILE = TEMP_DIR / "resume_revised.txt"
@@ -124,8 +124,25 @@ def prompt_llm(prompt: str) -> str:
     return llm_client.complete(prompt)
 
 
-def create_review_prompt(job_description: str) -> str:
-    """Construct JSON input and inject into prompt template."""
+def create_call1_prompt(job_description: str) -> str:
+    """Construct JSON input and inject into the Call 1 (analysis and questions) prompt."""
+    input_dict = {
+        "Job_Description": job_description,
+        "Resume": RESUME_BASELINE_FILE.read_text(),
+    }
+    if ADDITIONAL_EXPERIENCE_FILE.exists():
+        input_dict["Additional_Info"] = ADDITIONAL_EXPERIENCE_FILE.read_text()
+
+    input_json = json.dumps(input_dict, indent=4)
+    prompt = PROMPT_CALL1_ANALYSIS_FILE.read_text()
+    return prompt.replace("{{INPUT}}", input_json)
+
+
+def create_call2_prompt(job_description: str, qa_pairs: list[dict]) -> str:
+    """Construct JSON input and inject into the Call 2 (revised analysis and
+    tailored resume) prompt. Carries forward Call 1's fit and gaps, the same
+    resume and job description, and the candidate's answers.
+    """
     input_dict = {
         "Job_Description": job_description,
         "Resume": RESUME_BASELINE_FILE.read_text(),
@@ -133,18 +150,14 @@ def create_review_prompt(job_description: str) -> str:
     if ADDITIONAL_EXPERIENCE_FILE.exists():
         input_dict["Additional_Info"] = ADDITIONAL_EXPERIENCE_FILE.read_text()
     if OUTPUT_FROM_LLM_CURRENT_FILE.exists():
-        llm_response = json.loads(OUTPUT_FROM_LLM_CURRENT_FILE.read_text())
-        input_dict["Fit"] = llm_response.get("Fit")
-        input_dict["Gap_Map"] = llm_response.get("Gap_Map")
-    if USER_RESPONSE_FILE.exists():
-        input_dict["qa_pairs"] = json.loads(USER_RESPONSE_FILE.read_text())
+        call1_response = json.loads(OUTPUT_FROM_LLM_CURRENT_FILE.read_text())
+        input_dict["Fit"] = call1_response.get("Fit")
+        input_dict["Gap_Map"] = call1_response.get("Gap_Map")
+    input_dict["qa_pairs"] = qa_pairs
 
-    # replace placeholder {{input}} in the prompt template
     input_json = json.dumps(input_dict, indent=4)
-    prompt = PROMPT_RESUME_REVIEW_FILE.read_text()
-    prompt = prompt.replace("{{INPUT}}", input_json)
-
-    return prompt
+    prompt = PROMPT_CALL2_TAILOR_FILE.read_text()
+    return prompt.replace("{{INPUT}}", input_json)
 
 
 def create_resume_diff(baseline:str, revised:str) -> str:
@@ -172,20 +185,53 @@ def get_job_description_from_url(url:Url):
     return {"job_description": job_description}
 
 
-@app.post("/review", response_model=ReviewResult)
+def _call_llm_and_validate(prompt: str, schema: type, call_name: str):
+    """Call the LLM and validate its complete output before it can replace any
+    prior valid state. Returns the validated result and the raw response text.
+    """
+    print(f"{datetime.datetime.now()}: calling the LLM with prompt length", len(prompt))
+    try:
+        llm_response_json = prompt_llm(prompt)
+    except Exception as e:
+        print(f"{call_name}: LLM call failed:", type(e).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{call_name}: LLM call failed. Please try again."
+        )
+
+    try:
+        result = schema.model_validate(json.loads(llm_response_json))
+    except (json.JSONDecodeError, ValidationError) as e:
+        print(f"{call_name}: invalid model output:", type(e).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{call_name}: model returned an invalid response. Try again."
+        )
+
+    return result, llm_response_json
+
+
+def _rotate_llm_output(llm_response_json: str) -> None:
+    """Keep the last two raw LLM responses, so Call 2 can read Call 1's output."""
+    if OUTPUT_FROM_LLM_CURRENT_FILE.exists():
+        os.replace(OUTPUT_FROM_LLM_CURRENT_FILE, OUTPUT_FROM_LLM_PRIOR_FILE)
+    OUTPUT_FROM_LLM_CURRENT_FILE.write_text(llm_response_json)
+
+
+@app.post("/review", response_model=AnalysisResult)
 @traceable(name="generate_review_endpoint")
 def generate_review(job_listing: JobListing,
                     creds=Security(security)
                     ):
-    """Generate a review and tailored resume based on the job description.
+    """Run Call 1: analysis and questions only.
     Algo:
     1. If demo is true, return canned response
-    2. Create LLM prompt with create_review_prompt()
-    3. Call prompt_LLM with the prompt
-    4. Save the response to OUTPUT_FROM_LLM_CURRENT_FILE
-    5. Save the revised resume to RESUME_REVISED
-    6. Save the diff of baseline and revised resumes in the API response
-    7. Return the response
+    2. Create the Call 1 prompt from the resume and job description
+    3. Call the LLM and validate fit, gaps, and questions
+    4. Save the raw response to OUTPUT_FROM_LLM_CURRENT_FILE for Call 2 to read
+    5. Return the response
+
+    Call 1 deliberately does not generate a tailored resume.
     """
     if job_listing.demo:  # returned stubbed API response
         response = json.loads(RESPONSE_REVIEW_DEMO_FILE.read_text())
@@ -195,44 +241,17 @@ def generate_review(job_listing: JobListing,
     claims = verify_token(creds)
     check_authorized_user(claims)
 
-    # persist the submitted job description so follow-up questions reuse it
+    # persist the submitted job description so Call 2 reuses the same input
     JOB_DESCRIPTION_FILE.write_text(job_listing.job_description)
 
-    # get the LLM response
-    prompt = create_review_prompt(job_listing.job_description)
-    print(f"{datetime.datetime.now()}: calling the LLM with prompt length", len(prompt))
-    try:
-        llm_response_json = prompt_llm(prompt)
-    except Exception as e:
-        print("generate_review: LLM call failed:", type(e).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="generate_review: LLM call failed. Please try again."
-        )
+    prompt = create_call1_prompt(job_listing.job_description)
+    result, llm_response_json = _call_llm_and_validate(
+        prompt, AnalysisResult, "generate_review"
+    )
 
-    # validate the complete model output before replacing any prior valid state
-    try:
-        result = ReviewResult.model_validate(json.loads(llm_response_json))
-    except (json.JSONDecodeError, ValidationError) as e:
-        print("generate_review: invalid model output:", type(e).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="generate_review: model returned an invalid response. Try again."
-        )
+    _rotate_llm_output(llm_response_json)
 
-    # rotate the files to keep the last two LLM responses
-    if OUTPUT_FROM_LLM_CURRENT_FILE.exists():
-        os.replace(OUTPUT_FROM_LLM_CURRENT_FILE, OUTPUT_FROM_LLM_PRIOR_FILE)
-    OUTPUT_FROM_LLM_CURRENT_FILE.write_text(llm_response_json)
-
-    # diff the baseline and revised resumes, and save the diff in the API response
-    revised_resume = result.Tailored_Resume
-    RESUME_REVISED_FILE.write_text(revised_resume)  # save revised resume
-    baseline_resume = RESUME_BASELINE_FILE.read_text()
-    response = result.model_dump(by_alias=True)
-    response["Tailored_Resume"] = create_resume_diff(baseline_resume, revised_resume)
-
-    return response
+    return result.model_dump(by_alias=True)
 
 
 @app.post("/questions", response_model=ReviewResult)
@@ -240,11 +259,14 @@ def generate_review(job_listing: JobListing,
 def process_questions_and_answers(user_response: QuestionAnswers,
                                   creds=Security(security)
                                   ):
-    """Generate an updated review and resume based on candidate's answers.
+    """Run Call 2: revised analysis and tailored resume.
     Algo:
     1. If demo is true, return canned response
-    2. Save user response to USER_RESPONSE_FILE
-    4. Call generate_review() to get the updated review and resume
+    2. Save the candidate's answers to USER_RESPONSE_FILE
+    3. Create the Call 2 prompt from the same resume, same job description,
+       Call 1's fit/gaps, and the answers
+    4. Call the LLM and validate revised fit, revised gaps, and the tailored resume
+    5. Save the revised resume and return its diff against the baseline
     """
     # return stubbed response for demo
     if user_response.demo:
@@ -255,16 +277,25 @@ def process_questions_and_answers(user_response: QuestionAnswers,
     claims = verify_token(creds)
     check_authorized_user(claims)
 
-    # save user response to file
-    user_response_dict = user_response.qa_pairs
-    USER_RESPONSE_FILE.write_text(json.dumps(user_response_dict, indent=4))
+    # save the candidate's answers
+    qa_pairs = user_response.qa_pairs
+    USER_RESPONSE_FILE.write_text(json.dumps(qa_pairs, indent=4))
 
-    # call generate_review() to get the updated review and resume
-    job_listing = JobListing(
-        job_description=JOB_DESCRIPTION_FILE.read_text(),
-        url="Follow-up prompt from user",
+    # Call 2 reuses the same job description Call 1 persisted, not a resubmission
+    job_description = JOB_DESCRIPTION_FILE.read_text()
+    prompt = create_call2_prompt(job_description, qa_pairs)
+    result, llm_response_json = _call_llm_and_validate(
+        prompt, ReviewResult, "process_questions_and_answers"
     )
-    response = generate_review(job_listing=job_listing, creds=creds)
+
+    _rotate_llm_output(llm_response_json)
+
+    # diff the baseline and revised resumes, and save the diff in the API response
+    revised_resume = result.Tailored_Resume
+    RESUME_REVISED_FILE.write_text(revised_resume)  # save revised resume
+    baseline_resume = RESUME_BASELINE_FILE.read_text()
+    response = result.model_dump(by_alias=True)
+    response["Tailored_Resume"] = create_resume_diff(baseline_resume, revised_resume)
 
     return response
 

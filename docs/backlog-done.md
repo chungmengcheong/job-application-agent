@@ -196,3 +196,69 @@ gates_release_type: personal
 **Skipped by explicit user decision** (2026-08-18), alongside "Baseline the
 current workflow" above.
 
+### Implement Call 1: analysis and questions
+
+Input the selected resume and job description. Return validated fit, gaps, and
+targeted questions. Do not generate a tailored resume in Call 1.
+
+gates_release_type: personal
+
+Landed: `POST /review` now runs a dedicated Call 1 prompt
+(`prompts/prompt_call1_analysis_GOLD.txt`) built by `create_call1_prompt()` and
+validates the result against the new `AnalysisResult` schema (`Fit`, `Gap_Map`,
+`Questions`). `Tailored_Resume` is not a field on that schema at all, so Call 1
+cannot return one even if the model tries. The raw validated response is saved
+to `OUTPUT_FROM_LLM_CURRENT_FILE` for Call 2 to read back.
+
+### Implement Call 2: revised analysis and tailored resume
+
+Input the same resume, the same job description, and the user's answers. Return
+validated revised fit, revised gaps, and a tailored resume. Generate the redline
+deterministically only after the complete resume validates.
+
+gates_release_type: personal
+
+Landed: `POST /questions` no longer delegates to `/review`'s handler. It builds
+its own Call 2 prompt (`prompts/prompt_call2_tailor_GOLD.txt`, via
+`create_call2_prompt()`) from the same resume baseline, the job description
+Call 1 persisted to `JOB_DESCRIPTION_FILE`, Call 1's raw `Fit`/`Gap_Map` (read
+back from `OUTPUT_FROM_LLM_CURRENT_FILE`), and the submitted `qa_pairs`, then
+validates the result against `ReviewResult` (`Fit`, `Gap_Map`,
+`Tailored_Resume`; no `Questions` field). The deterministic redline is
+generated only after `Tailored_Resume` validates.
+
+Refined by explicit user decision (2026-08-18): keep today's PascalCase field
+names (`Fit`, `Gap_Map`, `Questions`, `Tailored_Resume`) on the split responses
+rather than adopting the lowercase `fit`/`gaps`/`questions`/`tailored_resume`
+example in docs/api.md's Increment 1.5 section. The snake_case rename now
+belongs to the Increment 2/3 `/api/v1` typed client cutover, not this increment
+— renaming twice was judged worse than renaming once at the right boundary.
+docs/api.md has been updated to show the actual PascalCase contract.
+
+### Update the web workflow and tests
+
+Show fit, gaps, and questions after Call 1. Show revised fit, revised gaps, and
+the tailored redline after Call 2. Test both calls with injected responses; the
+normal suite makes no paid calls.
+
+gates_release_type: personal
+
+Landed: `ReviewData` (`extension-panel.tsx`) and `ReviewResponse` (`lib/api.ts`)
+mark `Tailored_Resume` and `Questions` as optional, matching the two response
+shapes. The review panel only renders the follow-up questions/answer form when
+`Questions` is present (Call 1 state) and instead shows a "tailored resume is
+ready" notice once `Tailored_Resume` arrives (Call 2 state); the Resume tab
+already fell back to the plain baseline resume when no tailored resume exists
+yet, so it needed no change. Backend tests inject fake `prompt_llm` responses
+shaped for each call (`tests/test_api.py`, `tests/conftest.py`); the normal
+suite still makes no paid calls. Demo fixtures were updated to the per-call
+shapes: `demo/API_response_review_demo.json` has no `Tailored_Resume`,
+`demo/API_response_review_add_info_demo.json` has no `Questions`.
+
+## Increment 1.5 exit gate — met
+
+- Call 1 (`POST /review`) returns only fit, gaps, and targeted questions.
+- Call 2 (`POST /questions`) uses the original resume and job description plus
+  answers and returns revised fit, revised gaps, and a tailored resume.
+- The canned demo remains deterministic and makes no LLM call.
+

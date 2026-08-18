@@ -46,22 +46,23 @@ Chrome extension (frozen)              Static web app
              user/ temp/    client    deterministic diff
 ```
 
-The current live workflow asks one provider call to return fit, gaps, questions,
-and a complete tailored resume. After the user answers questions, the backend
-repeats that combined generation.
+The current live workflow runs two Groq calls, per Increment 1.5: `POST
+/review` returns fit, gaps, and questions (Call 1); after the user answers
+questions, `POST /questions` returns revised fit, revised gaps, and the
+tailored resume (Call 2). Call 1 does not generate a tailored resume, and Call
+2 does not return another question set.
 
 Important current constraints:
 
 - `user/` and `temp/` contain one process-global workflow state.
-- `/review` uses the submitted job description but does not persist it;
-  `/questions` rereads the demo-seeded global job description.
+- `/review` persists the submitted job description so `/questions` reuses the
+  same input rather than a demo-seeded global one.
 - startup cleanup can leave stale later files when an earlier file is missing.
 - model output is used before complete schema validation.
 - the canned demo uses checked-in fixtures but some demo paths can mutate the
   same working files as live mode.
-- synchronous provider requests can occupy the browser for up to 150 seconds.
-- the current working tree contains a Groq migration while the committed
-  baseline and some error text still refer to OpenAI.
+- synchronous provider requests can occupy the browser for up to 150 seconds
+  per call, twice per full review-and-tailor cycle.
 
 ## Canned demo boundary
 
@@ -77,9 +78,9 @@ The future authenticated one-time trial is a separate onboarding flow. A
 visitor may enter a resume and job description before authentication, but no
 provider call or persistence occurs until authentication and explicit submit.
 
-## Target live workflow
+## Live workflow
 
-Increment 1.5 introduces two Groq calls:
+Increment 1.5 landed two Groq calls:
 
 ```text
 active resume snapshot + job description

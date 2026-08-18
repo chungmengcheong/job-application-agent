@@ -40,6 +40,8 @@ interface AuthToken {
 }
 
 // ---- Lightweight API response types ----
+// postReview (Call 1) returns Fit/Gap_Map/Questions, no Tailored_Resume.
+// postQuestions (Call 2) returns Fit/Gap_Map/Tailored_Resume, no Questions.
 export interface ReviewResponse {
   Tailored_Resume?: string;
   Fit?: { score?: number; rationale?: string };

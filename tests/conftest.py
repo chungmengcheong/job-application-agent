@@ -51,7 +51,8 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
         "temp_dir": temp_dir,
         "resume_file": user_dir / "resume.txt",
         "additional_experience_file": user_dir / "additional_candidate_info.txt",
-        "prompt_file": prompt_dir / "prompt_resume_review_GOLD.txt",
+        "call1_prompt_file": prompt_dir / "prompt_call1_analysis_GOLD.txt",
+        "call2_prompt_file": prompt_dir / "prompt_call2_tailor_GOLD.txt",
         "resume_baseline_file": temp_dir / "resume_baseline.txt",
         "resume_revised_file": temp_dir / "resume_revised.txt",
         "user_response_file": temp_dir / "user_response.json",
@@ -68,48 +69,56 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     paths["additional_experience_file"].write_text(
         "ADDITIONAL EXPERIENCE", encoding="utf-8"
     )
-    paths["prompt_file"].write_text("PROMPT\n{{INPUT}}\nEND", encoding="utf-8")
+    paths["call1_prompt_file"].write_text("PROMPT\n{{INPUT}}\nEND", encoding="utf-8")
+    paths["call2_prompt_file"].write_text("PROMPT\n{{INPUT}}\nEND", encoding="utf-8")
     paths["resume_demo_file"].write_text("DEMO RESUME", encoding="utf-8")
     paths["job_description_demo_file"].write_text(
         "DEMO JOB DESCRIPTION", encoding="utf-8"
     )
 
-    live_response = {
-        "Fit": {"score": 8, "rationale": "Strong relevant experience."},
-        "Gap_Map": [
-            {
-                "JD Requirement/Keyword": "Leadership",
-                "Present in Resume?": "Y",
-                "Where/Evidence": "Led a team.",
-                "Gap handling": "Retain evidence.",
-            }
-        ],
+    gap_map = [
+        {
+            "JD Requirement/Keyword": "Leadership",
+            "Present in Resume?": "Y",
+            "Where/Evidence": "Led a team.",
+            "Gap handling": "Retain evidence.",
+        }
+    ]
+    live_response_call1 = {
+        "Fit": {"score": 6, "rationale": "Solid experience; some gaps."},
+        "Gap_Map": gap_map,
         "Questions": ["What else should I know about you and this job?"],
+    }
+    live_response_call2 = {
+        "Fit": {"score": 8, "rationale": "Strong relevant experience."},
+        "Gap_Map": gap_map,
         "Tailored_Resume": "LIVE RESUME improved",
     }
-    demo_response = {
-        **live_response,
+    demo_response_call1 = {
+        **live_response_call1,
         "Fit": {"score": 7, "rationale": "Demo rationale."},
+    }
+    demo_response_call2 = {
+        **live_response_call2,
+        "Fit": {"score": 8, "rationale": "Updated demo rationale."},
         "Tailored_Resume": "DEMO RESUME improved",
     }
-    follow_up_demo_response = {
-        **demo_response,
-        "Fit": {"score": 8, "rationale": "Updated demo rationale."},
-    }
     paths["review_demo_file"].write_text(
-        json.dumps(demo_response), encoding="utf-8"
+        json.dumps(demo_response_call1), encoding="utf-8"
     )
     paths["review_add_info_demo_file"].write_text(
-        json.dumps(follow_up_demo_response), encoding="utf-8"
+        json.dumps(demo_response_call2), encoding="utf-8"
     )
-    paths["llm_response"] = live_response
+    paths["llm_response_call1"] = live_response_call1
+    paths["llm_response_call2"] = live_response_call2
 
     monkeypatch.setattr(api, "TEMP_DIR", temp_dir)
     monkeypatch.setattr(api, "RESUME_FILE", paths["resume_file"])
     monkeypatch.setattr(
         api, "ADDITIONAL_EXPERIENCE_FILE", paths["additional_experience_file"]
     )
-    monkeypatch.setattr(api, "PROMPT_RESUME_REVIEW_FILE", paths["prompt_file"])
+    monkeypatch.setattr(api, "PROMPT_CALL1_ANALYSIS_FILE", paths["call1_prompt_file"])
+    monkeypatch.setattr(api, "PROMPT_CALL2_TAILOR_FILE", paths["call2_prompt_file"])
     monkeypatch.setattr(api, "RESUME_BASELINE_FILE", paths["resume_baseline_file"])
     monkeypatch.setattr(api, "RESUME_REVISED_FILE", paths["resume_revised_file"])
     monkeypatch.setattr(api, "USER_RESPONSE_FILE", paths["user_response_file"])

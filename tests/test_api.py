@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 from backend import api
-from backend.schemas import ReviewResult
+from backend.schemas import AnalysisResult, ReviewResult
 
 
 def _extract_prompt_input(prompt: str) -> dict:
@@ -19,15 +19,8 @@ def _extract_prompt_input(prompt: str) -> dict:
     return json.loads(prompt.removeprefix("PROMPT\n").removesuffix("\nEND"))
 
 
-def _assert_review_contract(body: dict) -> None:
-    """Assert the current consumer-critical review response shape."""
-    assert set(body) >= {"Fit", "Gap_Map", "Questions", "Tailored_Resume"}
-    assert isinstance(body["Fit"]["score"], int)
-    assert isinstance(body["Fit"]["rationale"], str)
-    assert isinstance(body["Gap_Map"], list)
-    assert isinstance(body["Questions"], list)
-    assert isinstance(body["Tailored_Resume"], str)
-    for gap in body["Gap_Map"]:
+def _assert_gap_map_shape(gap_map: list[dict]) -> None:
+    for gap in gap_map:
         assert set(gap) == {
             "JD Requirement/Keyword",
             "Present in Resume?",
@@ -36,11 +29,33 @@ def _assert_review_contract(body: dict) -> None:
         }
 
 
-def test_review_and_questions_enforce_the_same_response_schema() -> None:
-    """Demo and live responses on both routes validate against one schema."""
+def _assert_call1_contract(body: dict) -> None:
+    """Assert Call 1's fit/gaps/questions shape; no tailored resume yet."""
+    assert set(body) >= {"Fit", "Gap_Map", "Questions"}
+    assert "Tailored_Resume" not in body
+    assert isinstance(body["Fit"]["score"], int)
+    assert isinstance(body["Fit"]["rationale"], str)
+    assert isinstance(body["Gap_Map"], list)
+    assert isinstance(body["Questions"], list)
+    _assert_gap_map_shape(body["Gap_Map"])
+
+
+def _assert_call2_contract(body: dict) -> None:
+    """Assert Call 2's revised fit/gaps/tailored-resume shape; no new questions."""
+    assert set(body) >= {"Fit", "Gap_Map", "Tailored_Resume"}
+    assert "Questions" not in body
+    assert isinstance(body["Fit"]["score"], int)
+    assert isinstance(body["Fit"]["rationale"], str)
+    assert isinstance(body["Gap_Map"], list)
+    assert isinstance(body["Tailored_Resume"], str)
+    _assert_gap_map_shape(body["Gap_Map"])
+
+
+def test_review_and_questions_use_distinct_call_schemas() -> None:
+    """Call 1 (/review) and Call 2 (/questions) validate against distinct schemas."""
     routes_by_path = {route.path: route for route in api.app.routes}
 
-    assert routes_by_path["/review"].response_model is ReviewResult
+    assert routes_by_path["/review"].response_model is AnalysisResult
     assert routes_by_path["/questions"].response_model is ReviewResult
 
 
@@ -88,13 +103,13 @@ def test_lifespan_removes_each_stale_file_independently(
     assert not isolated_paths["output_prior_file"].exists()
 
 
-def test_prompt_contains_only_required_state_when_optional_files_are_absent(
+def test_call1_prompt_contains_only_required_state_when_optional_files_are_absent(
     isolated_paths: dict[str, Path],
 ) -> None:
     isolated_paths["resume_baseline_file"].write_text("BASELINE")
     isolated_paths["additional_experience_file"].unlink()
 
-    prompt_input = _extract_prompt_input(api.create_review_prompt("TARGET JOB"))
+    prompt_input = _extract_prompt_input(api.create_call1_prompt("TARGET JOB"))
 
     assert prompt_input == {
         "Job_Description": "TARGET JOB",
@@ -102,7 +117,38 @@ def test_prompt_contains_only_required_state_when_optional_files_are_absent(
     }
 
 
-def test_prompt_includes_additional_prior_and_answer_state(
+def test_call2_prompt_contains_only_required_state_when_optional_files_are_absent(
+    isolated_paths: dict[str, Path],
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("BASELINE")
+    isolated_paths["additional_experience_file"].unlink()
+
+    prompt_input = _extract_prompt_input(
+        api.create_call2_prompt("TARGET JOB", [{"question": "Q?", "answer": "A."}])
+    )
+
+    assert prompt_input == {
+        "Job_Description": "TARGET JOB",
+        "Resume": "BASELINE",
+        "qa_pairs": [{"question": "Q?", "answer": "A."}],
+    }
+
+
+def test_call1_prompt_ignores_any_prior_call_state(
+    isolated_paths: dict[str, Path],
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("BASELINE")
+    isolated_paths["output_current_file"].write_text(
+        json.dumps({"Fit": {"score": 6, "rationale": "Stale prior call"}})
+    )
+
+    prompt_input = _extract_prompt_input(api.create_call1_prompt("TARGET JOB"))
+
+    assert "Fit" not in prompt_input
+    assert "Gap_Map" not in prompt_input
+
+
+def test_call2_prompt_includes_additional_info_prior_fit_and_answers(
     isolated_paths: dict[str, Path],
 ) -> None:
     isolated_paths["resume_baseline_file"].write_text("BASELINE")
@@ -111,15 +157,16 @@ def test_prompt_includes_additional_prior_and_answer_state(
             {
                 "Fit": {"score": 6, "rationale": "Prior rationale"},
                 "Gap_Map": [{"JD Requirement/Keyword": "Prior gap"}],
-                "Tailored_Resume": "ignored by prompt builder",
+                "Questions": ["ignored by the Call 2 prompt builder"],
             }
         )
     )
-    isolated_paths["user_response_file"].write_text(
-        json.dumps([{"question": "Question?", "answer": "Answer."}])
-    )
 
-    prompt_input = _extract_prompt_input(api.create_review_prompt("TARGET JOB"))
+    prompt_input = _extract_prompt_input(
+        api.create_call2_prompt(
+            "TARGET JOB", [{"question": "Question?", "answer": "Answer."}]
+        )
+    )
 
     assert prompt_input["Job_Description"] == "TARGET JOB"
     assert prompt_input["Resume"] == "BASELINE"
@@ -127,16 +174,28 @@ def test_prompt_includes_additional_prior_and_answer_state(
     assert prompt_input["Fit"]["rationale"] == "Prior rationale"
     assert prompt_input["Gap_Map"][0]["JD Requirement/Keyword"] == "Prior gap"
     assert prompt_input["qa_pairs"][0]["answer"] == "Answer."
-    assert "Tailored_Resume" not in prompt_input
+    assert "Questions" not in prompt_input
 
 
-def test_prompt_replaces_every_input_placeholder(
+def test_call1_prompt_replaces_every_input_placeholder(
     isolated_paths: dict[str, Path],
 ) -> None:
     isolated_paths["resume_baseline_file"].write_text("BASELINE")
-    isolated_paths["prompt_file"].write_text("{{INPUT}}\n{{INPUT}}")
+    isolated_paths["call1_prompt_file"].write_text("{{INPUT}}\n{{INPUT}}")
 
-    prompt = api.create_review_prompt("TARGET JOB")
+    prompt = api.create_call1_prompt("TARGET JOB")
+
+    assert "{{INPUT}}" not in prompt
+    assert prompt.count('"Job_Description": "TARGET JOB"') == 2
+
+
+def test_call2_prompt_replaces_every_input_placeholder(
+    isolated_paths: dict[str, Path],
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("BASELINE")
+    isolated_paths["call2_prompt_file"].write_text("{{INPUT}}\n{{INPUT}}")
+
+    prompt = api.create_call2_prompt("TARGET JOB", [])
 
     assert "{{INPUT}}" not in prompt
     assert prompt.count('"Job_Description": "TARGET JOB"') == 2
@@ -188,7 +247,7 @@ def test_demo_review_is_deterministic_and_skips_llm(
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json() == second.json()
-    _assert_review_contract(first.json())
+    _assert_call1_contract(first.json())
     assert first.json()["Fit"]["score"] == 7
 
 
@@ -208,7 +267,7 @@ def test_demo_follow_up_is_deterministic_and_skips_llm(
     )
 
     assert response.status_code == 200
-    _assert_review_contract(response.json())
+    _assert_call2_contract(response.json())
     assert response.json()["Fit"]["score"] == 8
 
 
@@ -223,13 +282,13 @@ def test_demo_resume_load_does_not_mutate_live_baseline(
     assert isolated_paths["resume_baseline_file"].read_text() == "LIVE BASELINE"
 
 
-def test_live_review_parses_output_saves_plain_resume_and_returns_redline(
+def test_live_call1_returns_fit_gaps_and_questions_without_tailored_resume(
     client: TestClient,
     isolated_paths: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     isolated_paths["resume_baseline_file"].write_text("LIVE RESUME")
-    llm_response = isolated_paths["llm_response"]
+    llm_response = isolated_paths["llm_response_call1"]
     monkeypatch.setattr(api, "prompt_llm", lambda prompt: json.dumps(llm_response))
 
     response = client.post(
@@ -243,10 +302,36 @@ def test_live_review_parses_output_saves_plain_resume_and_returns_redline(
 
     assert response.status_code == 200
     body = response.json()
-    _assert_review_contract(body)
+    _assert_call1_contract(body)
     assert body["Fit"] == llm_response["Fit"]
     assert body["Gap_Map"] == llm_response["Gap_Map"]
     assert body["Questions"] == llm_response["Questions"]
+    assert not isolated_paths["resume_revised_file"].exists()
+    assert json.loads(isolated_paths["output_current_file"].read_text()) == llm_response
+
+
+def test_live_call2_parses_output_saves_plain_resume_and_returns_redline(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolated_paths["resume_baseline_file"].write_text("LIVE RESUME")
+    llm_response = isolated_paths["llm_response_call2"]
+    monkeypatch.setattr(api, "prompt_llm", lambda prompt: json.dumps(llm_response))
+
+    response = client.post(
+        "/questions",
+        json={
+            "qa_pairs": [{"question": "Question?", "answer": "Answer."}],
+            "demo": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_call2_contract(body)
+    assert body["Fit"] == llm_response["Fit"]
+    assert body["Gap_Map"] == llm_response["Gap_Map"]
     assert "<add> improved</add>" in body["Tailored_Resume"]
     assert (
         isolated_paths["resume_revised_file"].read_text()
@@ -255,7 +340,7 @@ def test_live_review_parses_output_saves_plain_resume_and_returns_redline(
     assert json.loads(isolated_paths["output_current_file"].read_text()) == llm_response
 
 
-def test_live_review_rotates_prior_raw_response(
+def test_live_call1_rotates_prior_raw_response(
     client: TestClient,
     isolated_paths: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
@@ -263,7 +348,9 @@ def test_live_review_rotates_prior_raw_response(
     isolated_paths["resume_baseline_file"].write_text("LIVE RESUME")
     isolated_paths["output_current_file"].write_text('{"previous": true}')
     monkeypatch.setattr(
-        api, "prompt_llm", lambda prompt: json.dumps(isolated_paths["llm_response"])
+        api,
+        "prompt_llm",
+        lambda prompt: json.dumps(isolated_paths["llm_response_call1"]),
     )
 
     response = client.post(
@@ -326,7 +413,7 @@ def test_invalid_llm_json_does_not_replace_prior_valid_state(
     isolated_paths: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    prior = json.dumps(isolated_paths["llm_response"])
+    prior = json.dumps(isolated_paths["llm_response_call1"])
     isolated_paths["output_current_file"].write_text(prior)
     monkeypatch.setattr(api, "prompt_llm", lambda prompt: "not-json")
 
@@ -342,12 +429,12 @@ def test_invalid_llm_json_does_not_replace_prior_valid_state(
     assert isolated_paths["output_current_file"].read_text() == prior
 
 
-def test_missing_tailored_resume_does_not_replace_prior_valid_state(
+def test_call1_incomplete_output_does_not_replace_prior_valid_state(
     client: TestClient,
     isolated_paths: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    prior = json.dumps(isolated_paths["llm_response"])
+    prior = json.dumps(isolated_paths["llm_response_call1"])
     isolated_paths["output_current_file"].write_text(prior)
     monkeypatch.setattr(
         api,
@@ -369,7 +456,34 @@ def test_missing_tailored_resume_does_not_replace_prior_valid_state(
     assert isolated_paths["output_current_file"].read_text() == prior
 
 
-def test_follow_up_uses_original_submitted_job_description(
+def test_call2_missing_tailored_resume_does_not_replace_prior_valid_state(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prior = json.dumps(isolated_paths["llm_response_call1"])
+    isolated_paths["output_current_file"].write_text(prior)
+    monkeypatch.setattr(
+        api,
+        "prompt_llm",
+        lambda prompt: json.dumps(
+            {"Fit": {"score": 8, "rationale": "Incomplete response"}}
+        ),
+    )
+
+    response = client.post(
+        "/questions",
+        json={
+            "qa_pairs": [{"question": "Question?", "answer": "Answer."}],
+            "demo": False,
+        },
+    )
+
+    assert response.status_code >= 400
+    assert isolated_paths["output_current_file"].read_text() == prior
+
+
+def test_call2_uses_original_submitted_job_description_and_call1_state(
     client: TestClient,
     isolated_paths: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
@@ -377,11 +491,14 @@ def test_follow_up_uses_original_submitted_job_description(
     isolated_paths["resume_baseline_file"].write_text("LIVE RESUME")
     captured_inputs: list[dict] = []
 
-    def capture_prompt(prompt: str) -> str:
-        captured_inputs.append(_extract_prompt_input(prompt))
-        return json.dumps(isolated_paths["llm_response"])
+    def capture(response: dict):
+        def _prompt_llm(prompt: str) -> str:
+            captured_inputs.append(_extract_prompt_input(prompt))
+            return json.dumps(response)
 
-    monkeypatch.setattr(api, "prompt_llm", capture_prompt)
+        return _prompt_llm
+
+    monkeypatch.setattr(api, "prompt_llm", capture(isolated_paths["llm_response_call1"]))
     first = client.post(
         "/review",
         json={
@@ -389,6 +506,8 @@ def test_follow_up_uses_original_submitted_job_description(
             "url": "https://example.com/job",
         },
     )
+
+    monkeypatch.setattr(api, "prompt_llm", capture(isolated_paths["llm_response_call2"]))
     follow_up = client.post(
         "/questions",
         json={
@@ -401,6 +520,7 @@ def test_follow_up_uses_original_submitted_job_description(
     assert follow_up.status_code == 200
     assert captured_inputs[-1]["Job_Description"] == "ORIGINAL TARGET JOB"
     assert captured_inputs[-1]["qa_pairs"][0]["answer"] == "Answer."
+    assert captured_inputs[-1]["Fit"] == isolated_paths["llm_response_call1"]["Fit"]
 
 
 def test_resume_load_copies_user_resume_to_working_baseline(

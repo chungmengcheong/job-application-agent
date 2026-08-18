@@ -18,8 +18,9 @@ The current panel:
 
 - loads a canned demo or the single server resume;
 - accepts a pasted job description;
-- shows fit, gaps, questions, and a tailored resume;
+- shows fit, gaps, and questions after Call 1;
 - submits follow-up answers;
+- shows revised fit, revised gaps, and a tailored resume after Call 2;
 - renders custom server-generated redline markup; and
 - stores accepted/rejected edits only in React state.
 
@@ -76,11 +77,12 @@ user exits demo and authenticates
     -> load one stored server resume
 
 submit job description
-    -> current combined provider call
-    -> fit + gaps + questions + tailored redline
+    -> Call 1 (POST /review)
+    -> fit + gaps + questions
 
 submit answers
-    -> repeat combined provider call
+    -> Call 2 (POST /questions)
+    -> revised fit + revised gaps + tailored redline
     -> replace review and resume state
 ```
 
@@ -102,9 +104,9 @@ The future authenticated one-time trial is separate. It may collect a resume
 and job description in browser memory, then requires authentication and explicit
 submission before persistence or a custom provider call.
 
-## Increment 1.5 workflow
+## Increment 1.5 workflow — implemented
 
-The supported live UI changes to:
+The supported live UI:
 
 ```text
 select active resume
