@@ -70,6 +70,12 @@ os.environ.setdefault("LANGSMITH_TRACING_V2", "true")
 os.environ.setdefault("LANGCHAIN_PROJECT", "AIRecruitingAgent")
 langsmith_client = Client(api_key=os.getenv("LANGSMITH_API_KEY"))
 
+# ENVIRONMENT gates debug behavior. Default to development so a missing
+# variable fails toward verbose local debugging rather than a silent
+# production misconfiguration.
+ENVIRONMENT = (os.getenv("ENVIRONMENT") or "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
+
 # Prepare temp and working files for FastAPI app
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,7 +101,7 @@ async def lifespan(app: FastAPI):
     # none for now
 
 # setup FastAPI app with CORS; mount oauth_router and static files
-app = FastAPI(debug=True, lifespan=lifespan)
+app = FastAPI(debug=not IS_PRODUCTION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -255,10 +261,10 @@ def generate_review(job_listing: JobListing,
     try:
         llm_response_json = prompt_llm(prompt)
     except Exception as e:
-        print("generate_review: OpenAI call failed:", type(e).__name__, str(e))
+        print("generate_review: OpenAI call failed:", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"generate_review: OpenAI call failed: ({type(e).__name__}): {e}"
+            detail="generate_review: OpenAI call failed. Please try again."
         )
 
     # rotate the files to keep the last two LLM responses

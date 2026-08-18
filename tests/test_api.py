@@ -279,10 +279,6 @@ def test_provider_exception_maps_to_bad_gateway(
     assert "OpenAI call failed" in response.json()["detail"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Planned contract: provider exception details must not be returned to clients.",
-)
 def test_provider_exception_does_not_leak_internal_detail(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

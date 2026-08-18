@@ -32,3 +32,36 @@ temp file independently instead of one `try`/`except` around sequential
 `os.remove` calls. Fixed
 `tests/test_api.py::test_lifespan_removes_each_stale_file_independently`
 (previously a strict xfail).
+
+### Disable production debug behavior and sanitize errors
+
+**Confirmed.** FastAPI uses `debug=True`, and provider exception text can reach
+clients. Add environment-specific debug configuration and stable safe errors.
+
+gates_release_type: personal
+
+Landed: added an `ENVIRONMENT` env var (default `development`); `FastAPI(debug=...)`
+is now `False` only when `ENVIRONMENT=production`. The `/review` provider-exception
+handler no longer interpolates the raw exception into the client-facing detail
+message. README's PythonAnywhere deployment steps and `.env.production` now
+document/set `ENVIRONMENT=production`. Fixed
+`tests/test_api.py::test_provider_exception_does_not_leak_internal_detail`
+(previously a strict xfail); added
+`tests/test_test_safety.py::test_debug_is_disabled_when_environment_is_production`
+and `::test_debug_defaults_to_enabled_outside_production`.
+
+### Enforce verified email before allowlist authorization
+
+**Confirmed.** Discovered while working Increment 1: `check_authorized_user`
+ran the `ALLOWED_EMAILS`/`ALLOWED_DOMAINS` allowlist check before checking
+`email_verified`, so an allowlisted-but-unverified email claim was accepted
+instead of rejected. Not in the original backlog item list; added here as a
+personal-gating security correctness fix alongside the debug/error-sanitization
+item above.
+
+gates_release_type: personal
+
+Landed: `check_authorized_user` now checks for a present, verified email first
+and raises 401 before any allowlist check runs. Fixed
+`tests/test_security.py::test_authorization_rejects_allowlisted_but_unverified_email`
+(previously a strict xfail).

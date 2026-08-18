@@ -61,10 +61,6 @@ def test_authorization_accepts_allowlisted_email(
     assert security.check_authorized_user(claims) == claims
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug: allowlist checks run before email_verified is enforced.",
-)
 def test_authorization_rejects_allowlisted_but_unverified_email(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -21,13 +21,6 @@ configuration. **Validation risk** requires a live check.
 Goal: Make the existing personal workflow trustworthy before restructuring it.
 Preserve the current LLM workflow in this increment.
 
-### Disable production debug behavior and sanitize errors
-
-**Confirmed.** FastAPI uses `debug=True`, and provider exception text can reach
-clients. Add environment-specific debug configuration and stable safe errors.
-
-gates_release_type: personal
-
 ### Add the minimum typed review schemas
 
 Add Pydantic contracts for the current fit, gaps, questions, tailored resume,

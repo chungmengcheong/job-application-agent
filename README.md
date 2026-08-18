@@ -37,6 +37,10 @@ Note:
 
 ### Deploying on PythonAnywhere
 
+0. Set `ENVIRONMENT=production` in the deployed `.env` file. This disables
+   FastAPI debug mode, which otherwise exposes tracebacks and internal
+   exception detail in HTTP responses. It defaults to `development` (debug
+   enabled) when unset, so local runs are unaffected.
 1. Firstly, create a FastAPI ASGI app
    - pa website create --domain airecruitingagent.pythonanywhere.com \
   --command '/home/airecruitingagent/.virtualenvs/airecruitingagent-venv/bin/uvicorn --app-dir /home/airecruitingagent/airecruitingagent --uds ${DOMAIN_SOCKET} backend.api:app'

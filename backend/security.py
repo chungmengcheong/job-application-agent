@@ -129,17 +129,17 @@ def check_authorized_user(claims: dict = Depends(verify_token)) -> dict:
     """Authorize the user based on ALLOWED_EMAILS and ALLOWED_DOMAINS."""
     email = (claims.get("email") or "").lower()
 
+    # email must be present and verified before allowlist checks run
+    if not email or not claims.get("email_verified", True):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="There is an issue with your email address. Please login again.")
+
     # email is allowed
     if ALLOWED_EMAILS and email in ALLOWED_EMAILS:
         return claims
     if ALLOWED_DOMAINS and email.split("@")[-1] in ALLOWED_DOMAINS:
         return claims
-
-    # email not present or not verified
-    if not email or not claims.get("email_verified", True):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="There is an issue with your email address. Please login again.")
 
     # email not authorized
     raise HTTPException(

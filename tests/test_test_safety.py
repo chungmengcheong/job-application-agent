@@ -36,3 +36,41 @@ def test_explicit_production_tracing_setting_is_not_overridden() -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_debug_is_disabled_when_environment_is_production() -> None:
+    environment = os.environ.copy()
+    environment["ENVIRONMENT"] = "production"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import backend.api as api; assert api.app.debug is False",
+        ],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_debug_defaults_to_enabled_outside_production() -> None:
+    environment = os.environ.copy()
+    environment.pop("ENVIRONMENT", None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import backend.api as api; assert api.app.debug is True",
+        ],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
