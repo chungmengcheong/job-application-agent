@@ -81,14 +81,15 @@ async def lifespan(app: FastAPI):
     shutil.copyfile(RESUME_DEMO_FILE, RESUME_BASELINE_FILE)
     # Make the demo job description the working job description
     shutil.copyfile(JOB_DESCRIPTION_DEMO_FILE, JOB_DESCRIPTION_FILE)
-    # delete temp working files if they exist
-    try:
-        os.remove(OUTPUT_FROM_LLM_CURRENT_FILE)
-        os.remove(RESUME_REVISED_FILE)
-        os.remove(USER_RESPONSE_FILE)
-        os.remove(OUTPUT_FROM_LLM_PRIOR_FILE)
-    except FileNotFoundError:
-        pass
+    # delete each stale temp working file independently, so one missing file
+    # does not stop cleanup of the rest
+    for stale_file in (
+        OUTPUT_FROM_LLM_CURRENT_FILE,
+        RESUME_REVISED_FILE,
+        USER_RESPONSE_FILE,
+        OUTPUT_FROM_LLM_PRIOR_FILE,
+    ):
+        stale_file.unlink(missing_ok=True)
     yield
     ## cleanup items here
     # none for now

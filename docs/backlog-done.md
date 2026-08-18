@@ -19,3 +19,16 @@ Landed: `/review` now writes the submitted job description to `JOB_DESCRIPTION_F
 before generating the prompt, so `/questions` reads the same value back. Fixed
 `tests/test_api.py::test_follow_up_uses_original_submitted_job_description`
 (previously a strict xfail).
+
+### Fix startup cleanup semantics
+
+**Confirmed.** One missing temp file stops deletion of later files. Remove files
+independently as an interim correction.
+
+gates_release_type: personal
+
+Landed: lifespan startup now calls `Path.unlink(missing_ok=True)` on each stale
+temp file independently instead of one `try`/`except` around sequential
+`os.remove` calls. Fixed
+`tests/test_api.py::test_lifespan_removes_each_stale_file_independently`
+(previously a strict xfail).

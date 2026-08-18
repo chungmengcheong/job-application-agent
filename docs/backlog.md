@@ -21,13 +21,6 @@ configuration. **Validation risk** requires a live check.
 Goal: Make the existing personal workflow trustworthy before restructuring it.
 Preserve the current LLM workflow in this increment.
 
-### Fix startup cleanup semantics
-
-**Confirmed.** One missing temp file stops deletion of later files. Remove files
-independently as an interim correction.
-
-gates_release_type: personal
-
 ### Disable production debug behavior and sanitize errors
 
 **Confirmed.** FastAPI uses `debug=True`, and provider exception text can reach

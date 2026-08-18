@@ -60,10 +60,6 @@ def test_lifespan_initializes_isolated_demo_baseline(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug: one missing file stops cleanup of every later stale file.",
-)
 def test_lifespan_removes_each_stale_file_independently(
     isolated_paths: dict[str, Path],
 ) -> None:
