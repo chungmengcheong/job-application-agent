@@ -1,1257 +1,268 @@
 # AI Recruiting Agent — Refactoring Plan
 
-This is a living implementation plan. It translates the current-system
-documentation into a sequence of small, runnable, observable increments. It
-should change as assumptions are validated; it is not a commitment to every
-future feature.
+This document records the project outcome, the small target architecture, and
+the decisions that constrain implementation. Detailed sequencing and exit gates
+live only in [docs/backlog.md](docs/backlog.md).
 
-Supporting context:
+Supporting documentation:
 
-- [docs/architecture.md](docs/architecture.md) — current system and working
-  target architecture
-- [docs/api.md](docs/api.md) — current backend contracts and state ownership
-- [docs/frontend.md](docs/frontend.md) — current web/extension behavior
-- [docs/backlog.md](docs/backlog.md) — evidence-labeled P0–P3 backlog
+- [docs/architecture.md](docs/architecture.md) — current and near-term architecture
+- [docs/api.md](docs/api.md) — current and proposed backend contracts
+- [docs/frontend.md](docs/frontend.md) — current web client and migration boundary
+- [docs/backlog.md](docs/backlog.md) — ordered implementation increments
 
-## Outcome
+## Immediate outcome
 
-Refactor the personal production app into a reliable foundation for a
-controlled beta with a handful of users:
+Turn the current application into a reliable personal web app and a credible
+portfolio project. The next possible horizon is a controlled beta for a handful
+of invited users, but beta-only machinery should not shape the immediate
+refactor unless it also improves current correctness, state ownership, or
+testability.
 
-1. demo and live mode exercise the same application workflow without sharing
-   mutable state;
-2. every resume and review is explicitly owned by one authenticated user;
-3. backend and frontend use small, explicit state models rather than implicit
-   files and interacting booleans; and
-4. the review loop sends less repeated context and streams useful progress and
-   output to the user.
+Preserve the useful product core:
 
-The refactor should preserve the product's useful core: job-fit assessment,
-gap analysis, follow-up questions, truthful resume tailoring, deterministic
-redlines, and user control over proposed changes.
+- compare a stored resume with a pasted job description;
+- assess fit and gaps;
+- ask targeted follow-up questions;
+- use the answers to revise fit and gaps and produce a truthful tailored resume;
+- generate deterministic redlines; and
+- leave every proposed resume change under user control.
 
-## Success criteria
+## Product boundaries
 
-### Immediate: learning and portfolio showcase
+### Supported client
 
-The immediate goal is a credible GitHub repository that demonstrates hands-on
-exposure to modern application patterns. It does not need public-app scale, but
-the patterns should be real rather than decorative:
+The web application is the only supported client during the current refactor.
+Chrome extension development and releases are deferred and frozen:
 
-- lightweight architecture, API, frontend, backlog, and testing docs remain
-  aligned with the code;
-- FastAPI routes delegate to typed services, repositories, and provider
-  adapters with clear state ownership;
-- SQLite schema changes are migrated and tested;
-- the web client uses typed API contracts and explicit workflow state;
-- demo and live behavior share schemas without sharing mutable data;
-- unit, contract, integration, typecheck, and build gates are runnable from a
-  fresh checkout;
-- known defects and validation boundaries are explicit; and
-- commits/increments are small enough for a reviewer to understand the design
-  progression.
+- do not let Chrome APIs, OAuth, storage, packaging, or layout requirements
+  shape the web refactor;
+- stop treating the extension build as a release gate;
+- retain the current extension code only until web-only code has been safely
+  separated;
+- then remove the obsolete implementation from the active tree while preserving
+  a tagged Git reference and a concise architecture note; and
+- rename `BrowserExtension/` to a web-oriented directory when that can be done
+  as a contained change.
 
-Success here means the repository honestly shows applied understanding and
-tradeoffs. It does not require adopting every fashionable tool or completing
-the limited-beta feature set.
+The extension remains a plausible future execution surface for browser-native
+capabilities: extracting a job description from the active page, assisting with
+user-approved application-form completion, and inspecting relevant networking
+context. Reassess those jobs after the web workflow is reliable. A future
+extension should be a thin, purpose-built client of the proven API rather than a
+reason to preserve the current extension architecture.
 
-### Personal production use
+### Canned demo
 
-- A review and its follow-up use the same submitted job description and resume.
-- Public demo activity cannot read or alter live resume/review state.
-- The supported web workflow passes a production-like smoke test.
-- Invalid model output fails safely without corrupting the prior review.
-- Sensitive content is not emitted through application logs or error responses.
-- The supported LLM provider, authentication flow, and tracing policy are
-  explicitly configured and validated.
+Keep the current public canned demo permanently:
 
-### Limited beta
+- fixed synthetic resume and job description;
+- fixed initial and follow-up responses;
+- no LLM calls, authentication, account, or persistence;
+- dedicated read-only demo paths that never touch live `user/` or `temp/`
+  state; and
+- fixtures validated against the same response schemas consumed by the web UI.
 
-- The working product promise in `static/index.html` is fulfilled for the first
-  four steps: paste a job description, understand fit and gaps, answer targeted
-  follow-up questions, and produce a credible tailored ATS-oriented resume.
-- Two authorized users can run overlapping reviews without state leakage or
-  corruption.
-- Each user can manage their own active resume.
-- Each review has a durable identifier, ownership, status, and inspectable
-  failure state.
-- Refreshing the browser restores the active review.
-- Demo and live responses conform to one versioned schema.
-- Structured logs connect a client request, review, model call, and failure
-  without containing resume or job-description text.
+The canned demo is distinct from the future authenticated one-time trial.
 
-### LLM and streaming
+### Authenticated one-time trial
 
-- The first useful review information appears before the complete tailored
-  resume is ready.
-- A disconnected client can reload the durable review rather than forcing a
-  second paid model call.
-- Follow-up turns do not resend unnecessary prior model prose or unrelated
-  resume content.
-- Token counts, latency, model, provider, and outcome are recorded per model
-  call.
-- A malformed or interrupted stream cannot leave a review marked complete.
+After durable users and resumes exist, add an onboarding flow in which a visitor
+may enter a resume and job description before authentication, but the system
+makes no LLM call and persists no sensitive input until the visitor authenticates
+and explicitly submits. The resulting account owns the stored resume and custom
+review. This is Increment 2.5, not part of demo isolation.
 
-## Non-goals for this refactor
+## Target live workflow
 
-- General-public signup, billing, teams, or enterprise tenancy
-- Automated job-page scraping
-- A background job platform before synchronous-plus-streaming execution proves
-  insufficient
-- Semantic/vector search over resumes before prompt measurements justify it
-- Supporting many LLM providers simultaneously
-- Rebuilding the visual design
-- Automatically accepting or saving LLM resume edits without user action
-
-## Guiding design decisions
-
-| Area | Decision | Rationale |
-|---|---|---|
-| Unit of work | Make `Review` the durable aggregate | It binds user, resume snapshot, job description, questions, answers, model calls, status, and output. |
-| Identity boundary | Derive ownership from verified token claims, never request fields | Prevents one caller from selecting another user's state. |
-| Persistence | Use a repository abstraction backed initially by SQLite | Appropriate for a small beta, supports transactions and concurrent users, and leaves a path to managed Postgres. |
-| Resume input | Snapshot the selected resume into each review | Follow-ups remain reproducible even if the user later replaces their resume. |
-| Demo | Seed an isolated demo review through the same service/schema | Removes special response paths and contract drift while keeping demo deterministic. |
-| API shape | Use conventional JSON commands plus server-sent events for review progress | SSE fits one-way model output, works over normal HTTP, and is simpler than WebSockets for this workflow. |
-| Streaming durability | Persist validated stage results before emitting completion events | Browser disconnection must not determine whether work is saved. |
-| LLM boundary | One provider adapter, typed inputs/outputs, and recorded usage | Keeps provider churn out of domain logic and makes optimization measurable. |
-| LLM workflow | Separate structured analysis from resume generation | The user can see fit/gaps/questions earlier; follow-up turns can update only affected artifacts. |
-| Redline | Keep deterministic diffing outside the LLM | Avoids spending tokens on markup and preserves inspectable behavior. |
-| Frontend state | Separate server state, workflow state, and local edit state | Avoids one large component coordinating auth, fetching, workflow, and redline editing through booleans. |
-| Migration | Build vertical slices behind current behavior; avoid a big-bang rewrite | Each increment can be tested and deployed independently. |
-| Primary beta client | Web application | Stabilize one complete user experience before returning to the extension. |
-| Extension timing | Defer extension refactoring to a post-beta P2 increment | The extension should consume the proven shared product core rather than shape the first beta architecture. |
-| Initial database | SQLite | Appropriate for the expected beta scale; validate production filesystem, backup, and concurrent-write assumptions. |
-| Resume versions | Support multiple resumes per user | Users need durable versions and must explicitly select the resume used for each review. |
-| Demo retention | Persist synthetic demo sessions for 24 hours | Supports refresh and stream reconnection without retaining demo activity as durable product history. |
-| LLM provider | Groq through its OpenAI-compatible interface | Preserve an OpenAI-shaped adapter while choosing Groq as the supported provider. |
-| Development retention | Persist resumes, job descriptions, answers, reviews, and model-call metadata during development | Supports debugging and product learning; deletion controls and a beta retention policy remain required before broader use. |
-| Optional traces | Do not retain optional prompt/response traces | Avoid duplicating sensitive resume and job-description content outside application-owned state. |
-
-SQLite is the selected first-beta database, not a permanent infrastructure
-decision. Validate PythonAnywhere locking, backup, filesystem persistence, and
-overlapping-write behavior before the multi-user release gate. If those
-assumptions fail, move the same repository contract to managed Postgres.
-
-## Target architecture
+Increment 1 preserves the current LLM workflow while making it correct and
+safe. Increment 1.5 then changes the live workflow to two calls and makes Groq
+the supported provider:
 
 ```text
-Web shell                         Chrome extension shell
-OAuth + browser adapter           OAuth + Chrome adapter
-        |                                  |
-        +---------- shared product UI -----+
-                           |
-                    typed API client
-                    + SSE event client
-                           |
-                           v
-                  FastAPI route layer
-                  auth + validation
-                           |
-                           v
-                     ReviewService
-             +-------------+-------------+
-             |             |             |
-             v             v             v
-      ReviewRepository  LLMAdapter   RedlineService
-      users/resumes/    typed stages  deterministic
-      reviews/events    usage data    diff
-             |
-             v
-        SQLite initially
-        Postgres if needed
+Call 1
+resume snapshot + job description
+    -> fit
+    -> gaps
+    -> targeted questions
+
+User answers questions
+
+Call 2
+same resume snapshot + same job description + answers
+    -> revised fit
+    -> revised gaps
+    -> tailored resume
+
+validated tailored resume
+    -> deterministic server-side redline
 ```
 
-The route layer owns HTTP concerns. `ReviewService` owns workflow transitions.
-Repositories own persistence. The LLM adapter owns provider syntax, streaming,
-timeouts, usage metadata, and raw-response boundaries. None of those concerns
-should live in React components or route functions.
+Call 1 does not generate a premature tailored resume. Call 2 recalculates fit
+and gaps from the original evidence plus the answers; it need not reproduce a
+new question set.
 
-## Core domain model
+Use ordinary JSON `POST` and `GET` contracts. Do not add SSE, WebSockets, event
+sequencing, or browser-visible streaming now. The backend may later consume a
+provider stream internally without exposing streaming to the browser. If
+synchronous HTTP proves unreliable, the next simplest transport is
+`POST -> 202 + review_id` followed by `GET` polling.
 
-The exact schema may evolve, but ownership and lifecycle should not be implicit.
+## Small target architecture
+
+```text
+Web application
+  typed API client + explicit workflow state
+                    |
+                    v
+FastAPI routes: authentication, validation, HTTP errors
+                    |
+                    v
+              ReviewService
+             /      |       \
+            v       v        v
+   SQLiteReviewStore  GroqClient  deterministic redline function
+```
+
+- Routes own HTTP concerns.
+- `ReviewService` owns the two-call workflow and state transitions.
+- One SQLite store module owns persistence. Do not add a repository hierarchy
+  for a hypothetical second database.
+- One thin injectable Groq client owns provider syntax, timeouts, usage, and
+  raw-response boundaries. Do not build multi-provider machinery.
+- Keep deterministic redlining as a function unless it develops service-level
+  dependencies.
+
+## Initial durable model
+
+Use three tables initially.
 
 ### `User`
 
 ```text
-id                  internal stable ID
-google_subject      unique verified `sub` claim
-email               normalized display/allowlist audit value
+id
+google_subject       unique verified Google `sub`
+email                display and allowlist audit value
+active_resume_id     nullable pointer to one owned stored resume
 created_at
 last_seen_at
 ```
-
-Use Google's stable `sub` claim as the external identity key. Email can change
-and should not be the primary key.
 
 ### `Resume`
 
 ```text
 id
-user_id             owner
+user_id              owner
 name
 content
-content_hash
 created_at
 updated_at
-archived_at
 ```
 
-Start with one active resume per user in the product UI, while avoiding a
-database constraint that prevents later versioning.
+A user may store multiple resumes and select exactly one as active. Updating a
+stored resume never changes snapshots already attached to reviews.
 
 ### `Review`
 
 ```text
 id
-user_id             owner; nullable only for isolated public demo records
-resume_id           source resume
-resume_snapshot     immutable content used for this review
-job_description
-source_url
-mode                 live | demo
-status               created | analyzing | awaiting_answers |
-                     tailoring | completed | failed
-schema_version
-error_code           safe classified error
+user_id              owner
+resume_id            selected stored resume
+resume_snapshot      immutable content used by both calls
+job_description      immutable input used by both calls
+source_url           optional page context for web or a future extension
+answers_json
+result_json           validated current analysis or completed result
+status                processing | awaiting_answers | completed | failed
+safe_error_code
 created_at
 updated_at
 completed_at
 ```
 
-### Review artifacts
-
-Store typed artifacts rather than treating one raw model response as all state:
-
-```text
-ReviewAnalysis
-    review_id
-    version
-    fit_score
-    fit_rationale
-    positioning
-    gap_map_json
-    questions_json
-
-ReviewAnswers
-    review_id
-    version
-    qa_pairs_json
-
-TailoredResume
-    review_id
-    version
-    content
-    redline
-```
-
-For a small beta these can be JSON columns or fields on a small number of
-tables. Do not prematurely normalize every gap row or question unless querying
-them becomes a product requirement.
-
-### `ModelCall`
-
-```text
-id
-review_id
-stage                analysis | follow_up_analysis | tailoring
-provider
-model
-prompt_version
-status               started | completed | failed
-input_tokens
-output_tokens
-latency_ms
-error_code
-created_at
-completed_at
-```
-
-Do not store full raw prompts/responses by default. If temporarily retained for
-development, make that an explicit environment policy with redaction and
-retention.
-
-## Backend state model
-
-`ReviewService` is the only component allowed to move a review between states.
-
-```text
-created
-   |
-   v
-analyzing ---------------------------> failed
-   |
-   +--> questions exist --> awaiting_answers
-   |                            |
-   |                            v
-   |                     analyzing follow-up
-   |                            |
-   +----------------------------+
-   |
-   v
-tailoring ---------------------------> failed
-   |
-   v
-completed
-```
-
-Rules:
-
-- Transitions are persisted transactionally.
-- `failed` retains the last completed artifact and a safe error code.
-- A retry creates a new model-call attempt; it does not erase prior successful
-  artifacts.
-- Only the owning user can read, update, retry, answer, or delete a live review.
-- Demo review identifiers must not resolve through live-user repository paths.
-- Completion requires a validated analysis, tailored resume, and deterministic
-  redline.
-- Model text is never itself the workflow status.
-
-## Frontend state model
-
-Use three deliberately separate kinds of state.
-
-### Server state
-
-Fetched and cached by review/resume ID:
-
-- current user/session
-- active resume metadata/content
-- review record and status
-- analysis, questions, and tailored resume
-- model/progress events
-
-Refreshing the page refetches this state from the backend.
-
-### Workflow state
-
-Represent the page as a discriminated state rather than interacting booleans:
-
-```text
-booting
-demo_ready
-signed_out
-resume_required
-ready
-submitting
-streaming_analysis
-awaiting_answers
-streaming_tailoring
-completed
-error
-```
-
-Authentication and authorization are session facts, not inferred from whether
-resume content happened to load.
-
-### Local UI state
-
-Keep only ephemeral presentation/editing state locally:
-
-- active tab
-- unsent job description
-- unsent follow-up answers
-- redline visibility
-- locally accepted/rejected/edited changes
-- copy feedback and tooltip visibility
-
-Do not persist bearer tokens, review content, and developer backend selection
-through the same generic storage helper.
-
-## Frontend refactoring plan
-
-The frontend is not one deployment with a few conditionals. It is a shared
-product experience hosted by two platforms:
-
-```text
-                         Shared product core
-             review workflow, screens, redline editor
-                        /                 \
-                       /                   \
-              Web application         Chrome extension
-              web auth adapter        Chrome identity adapter
-              browser storage         chrome.storage adapter
-              responsive shell        side-panel shell
-              explicit source URL     active-tab adapter
-```
-
-The shared core should know what capability it needs, not which browser API
-provides it.
-
-### Proposed module boundaries
-
-```text
-BrowserExtension/
-    app/                         Next.js web routes and web shell
-    extension/                   Manifest, service worker, side-panel entry
-    features/
-        auth/                    Session UI and platform-neutral auth contract
-        resumes/                 Resume list, editor, and selection
-        reviews/                 Review workflow and server-state hooks
-        redline/                 Redline display and edit model
-        demo/                    Demo entry and fixture presentation
-    platforms/
-        web/                     OAuth redirect, local browser integration
-        chrome/                  Chrome identity, storage, active-tab integration
-    api/                         Typed JSON and SSE client
-    components/                  Reusable presentation components
-```
-
-The exact folders can follow the existing Next.js conventions. The important
-boundary is that `extension-panel.tsx` no longer owns platform detection,
-authentication, API calls, workflow transitions, and the entire product UI.
-
-### Shared product core
-
-Extract the current panel into independently testable product areas:
-
-- `JobDescriptionStep`
-- `ReviewSummary`
-- `GapMap`
-- `FollowUpQuestions`
-- `TailoredResume`
-- `RedlineEditor`
-- `ReviewWorkspace`
-
-`ReviewWorkspace` coordinates a review ID and explicit workflow state. Leaf
-components receive typed data and callbacks; they do not call browser APIs or
-construct backend URLs.
-
-### Platform contracts
-
-Use narrow interfaces:
-
-```ts
-interface AuthAdapter {
-  getSession(): Promise<Session | null>
-  login(): Promise<void>
-  logout(): Promise<void>
-}
-
-interface PageContextAdapter {
-  getSourceUrl(): Promise<string | null>
-}
-
-interface ClientStorage {
-  get<T>(key: string): Promise<T | null>
-  set<T>(key: string, value: T): Promise<void>
-  remove(key: string): Promise<void>
-}
-```
-
-- The web adapter owns the OAuth callback and web-safe token/session storage.
-- The Chrome adapter owns `chrome.identity`, `chrome.storage`, and active-tab
-  access.
-- Product code receives adapters at the shell boundary and contains no
-  `window.chrome` checks.
-- The backend base URL is deployment configuration. A local/cloud toggle may
-  exist only in a development build.
-
-The current browser-held ID-token design can remain during the first vertical
-slice to limit scope. Its long-term web storage/session design is gated by the
-P0 authentication validation rather than silently standardized during UI
-refactoring.
-
-### Web shell
-
-The web app should become a deliberate full-page application:
-
-- responsive layout rather than a fixed extension-width panel over a landing
-  page;
-- direct routes for resume management and `reviews/{review_id}`;
-- explicit paste/input behavior rather than pretending the web app can inspect
-  another tab;
-- callback and signed-out pages that preserve the intended destination;
-- accessible loading, failure, and reconnect states; and
-- no Chrome-specific controls or close-panel behavior.
-
-The FastAPI marketing page and Vercel application currently compete as web
-entry points. Choose one canonical product URL and make other entry points
-redirect or link to it.
-
-### Chrome extension shell
-
-Retain one supported Manifest V3 path:
-
-- extension action opens the Chrome side panel;
-- side panel mounts the shared product core through the Chrome adapters;
-- active-tab URL is optional context, not a substitute for job-description
-  extraction;
-- remove the iframe/content-script panel path unless a separately scoped
-  on-page feature needs it; and
-- generate `dist-extension/` from source rather than treating generated HTML
-  or bundles as parallel source files.
-
-Do not add page scraping during this refactor. If job-description extraction is
-later required, give it a separate permission and data-flow review.
-
-### Review and redline persistence
-
-Server review artifacts are durable. Redline hover/selection state remains
-local. The user must take an explicit action to create a finalized artifact:
-
-```text
-POST /api/v1/reviews/{review_id}/final-resume
-```
-
-The request sends the accepted/rejected/edited plain resume plus the source
-tailored-resume version. The server validates ownership and version, then
-stores it as a new review artifact. Copy/download can remain available without
-saving.
-
-This addresses reload loss without silently treating every hover or edit as a
-server mutation.
-
-### Frontend build system
-
-Before declaring either runtime supported:
-
-- choose one package manager and lockfile;
-- replace `latest` dependency ranges with intentional versions;
-- remove unused Node/browser shims and duplicate entry paths;
-- add non-interactive `lint` and `typecheck` commands;
-- stop suppressing TypeScript and lint failures during builds;
-- keep web and extension builds as separate named commands over shared source;
-- add contract/unit tests before moving component boundaries; and
-- document generated artifacts and whether they are committed or release-only.
-
-The web build is the beta release gate. Extension modernization and its build
-gate are deferred to a post-beta P2 increment.
-
-## Proposed API
-
-Keep the current endpoints during migration, then retire them after the new
-vertical flow is proven.
-
-### Session and resumes
+Keep fit, gaps, questions, answers, and tailored output in validated JSON fields
+until independent querying or lifecycle requirements justify separate tables.
+Do not initially add artifact versions, answer versions, model-call tables,
+retry histories, or finalized-resume versions.
+
+## Minimal authenticated API
 
 ```text
 GET    /api/v1/me
+
 GET    /api/v1/resumes
 POST   /api/v1/resumes
 GET    /api/v1/resumes/{resume_id}
 PUT    /api/v1/resumes/{resume_id}
-DELETE /api/v1/resumes/{resume_id}
+POST   /api/v1/resumes/{resume_id}/activate
+
+POST   /api/v1/reviews
+GET    /api/v1/reviews/{review_id}
+POST   /api/v1/reviews/{review_id}/answers
 ```
 
-For the first increment, `POST`/`PUT` may accept plain text only. File parsing
-is a separate future feature.
-
-### Reviews
-
-```text
-POST /api/v1/reviews
-GET  /api/v1/reviews/{review_id}
-POST /api/v1/reviews/{review_id}/answers
-POST /api/v1/reviews/{review_id}/retry
-POST /api/v1/reviews/{review_id}/final-resume
-GET  /api/v1/reviews/{review_id}/events
-```
-
-Create review:
-
-```json
-{
-  "resume_id": "res_...",
-  "job_description": "...",
-  "source_url": "https://example.com/job"
-}
-```
-
-Response:
-
-```json
-{
-  "review_id": "rev_...",
-  "status": "created",
-  "events_url": "/api/v1/reviews/rev_.../events"
-}
-```
-
-Submit answers:
-
-```json
-{
-  "analysis_version": 1,
-  "qa_pairs": [
-    {
-      "question_id": "q_1",
-      "answer": "..."
-    }
-  ]
-}
-```
-
-The version prevents answers generated for an old question set from silently
-updating a newer analysis.
-
-### API error contract
-
-Every `/api/v1` error should use a stable envelope:
-
-```json
-{
-  "error": {
-    "code": "MODEL_TIMEOUT",
-    "message": "The review took too long. Please retry.",
-    "request_id": "req_...",
-    "retryable": true
-  }
-}
-```
-
-- HTTP status communicates the transport/category failure.
-- `code` drives client behavior and is safe to log.
-- `message` is user-facing and contains no provider exception or sensitive
-  input.
-- Field validation errors retain structured field locations.
-- Demo and live APIs use the same error envelope.
-- The frontend switches on typed codes, not searches for `"401"` or `"403"` in
-  error strings.
-
-### Streaming event contract
-
-Use Server-Sent Events (SSE), an HTTP response that remains open so the server
-can send a sequence of one-way updates to the browser. Unlike WebSockets, SSE
-does not create a two-way messaging channel; the browser uses ordinary JSON
-requests to start/retry work and SSE only to receive progress.
-
-Use `text/event-stream` with typed, versioned events:
-
-```text
-event: review.status
-data: {"review_id":"rev_...","status":"analyzing","sequence":1}
-
-event: analysis.completed
-data: {"review_id":"rev_...","analysis_version":1,"analysis":{...},"sequence":2}
-
-event: tailoring.delta
-data: {"review_id":"rev_...","text":"partial text","sequence":3}
-
-event: review.completed
-data: {"review_id":"rev_...","tailored_resume_version":1,"sequence":4}
-
-event: review.failed
-data: {"review_id":"rev_...","code":"MODEL_TIMEOUT","retryable":true,"sequence":5}
-```
-
-Important boundary:
-
-- Status and completed artifacts are durable server state.
-- `tailoring.delta` is transient display data and need not be saved token by
-  token.
-- On reconnect or refresh, the client first fetches the review record, then
-  resumes events after the last sequence if supported.
-- The final resume is published only after the complete streamed text passes
-  schema/content validation and is saved.
-- Never stream raw provider exceptions, prompts, tokens, or internal traces.
-
-SSE is the initial hypothesis. Validate that the selected PythonAnywhere/Vercel
-path does not buffer or terminate the stream before making it the supported
-transport. If it cannot reliably stream, retain the same durable review model
-and use short polling; do not redesign the domain around the transport.
-
-## Less brittle demo design
-
-The demo should be a first-class adapter around the real service contract, not
-branches scattered across endpoints.
-
-### Proposed behavior
-
-- Keep checked-in, synthetic `DemoScenario` fixtures:
-  - resume
-  - job description
-  - analysis result
-  - follow-up answers/result
-  - tailored resume
-- Validate every fixture against the same Pydantic schemas used for live model
-  output.
-- Create demo reviews as isolated SQLite records addressed by an unguessable
-  demo-session ID.
-- Expire and delete demo reviews automatically after 24 hours.
-- Run deterministic redline generation through the same `RedlineService`.
-- Emit the same event types as live mode, optionally with short simulated
-  delays for the streaming UX.
-- Never copy demo content into a live user's resume or review tables.
-- Never select demo behavior from a caller-controlled `demo: true` field on a
-  live mutation endpoint.
-
-### Preferred public contract
-
-```text
-POST /api/v1/demo/reviews
-GET  /api/v1/demo/reviews/{demo_review_id}
-POST /api/v1/demo/reviews/{demo_review_id}/answers
-GET  /api/v1/demo/reviews/{demo_review_id}/events
-```
-
-The demo route chooses the fixture scenario server-side. Live routes ignore
-demo flags entirely.
-
-### Demo contract test
-
-Run the same consumer assertions against demo and mocked-live responses:
-
-- required fields and allowed enum values;
-- analysis and question versions;
-- state transition ordering;
-- final tailored resume and redline format; and
-- frontend rendering.
-
-## Multi-user design
-
-### Request identity
-
-One FastAPI dependency should:
-
-1. verify the Google ID token;
-2. enforce the invited email/domain policy;
-3. resolve or create the internal user from the verified `sub`; and
-4. return a typed `CurrentUser`.
-
-Routes pass `CurrentUser.id` to services. They never accept `user_id` from the
-client for owned resources.
-
-### Repository rules
-
-- Every resume/review query includes owner scope.
-- A missing resource and another user's resource produce the same not-found
-  response.
-- Database foreign keys and unique constraints enforce ownership invariants.
-- Updates use transactions and, where needed, version checks.
-- Filesystem paths are not constructed from email addresses or client input.
-- Tests run two-user interleavings, not only sequential happy paths.
-
-### Limited-beta storage decision
-
-Use SQLite for the first beta and validate all of the following:
-
-- one durable production filesystem;
-- one effective writer process or acceptable write contention;
-- reliable backup/restore;
-- deployment does not replace the database file; and
-- overlapping review writes pass a stress test.
-
-If a validation fails materially, use managed Postgres before beta. The
-repository interface should make this a deployment decision rather than a
-service rewrite.
-
-## LLM workflow and token efficiency
-
-Do not optimize only by choosing a smaller model. First stop resending and
-regenerating information the system already has.
-
-### Stage 1: structured analysis
-
-Input:
-
-- job description;
-- resume snapshot;
-- optional additional candidate information; and
-- compact prompt instructions.
-
-Output:
-
-- fit score and rationale;
-- positioning;
-- gap map with stable gap IDs; and
-- follow-up questions with stable question IDs.
-
-Persist the validated result and show it immediately.
-
-### Stage 2: follow-up update
-
-Input:
-
-- compact job requirements extracted in stage 1;
-- relevant resume evidence or resume snapshot if measurement shows it is still
-  necessary;
-- prior gap records by stable ID; and
-- new question-answer pairs.
-
-Output:
-
-- only updated fit/positioning/gap/question artifacts, preferably as a complete
-  replacement structured object rather than prose describing a patch.
-
-Do not include a previously generated tailored resume unless the user is
-explicitly revising that artifact.
-
-### Stage 3: tailored resume
-
-Input:
-
-- immutable resume snapshot;
-- compact positioning and gap-handling decisions;
-- verified follow-up evidence; and
-- formatting/truthfulness constraints.
-
-Output:
-
-- plain tailored resume only.
-
-Stream this stage for perceived latency. Generate redlines locally on the
-server after completion; never ask the model to produce diff markup.
-
-### Measurement before deeper optimization
-
-Record per stage:
-
-- prompt version;
-- input/output tokens;
-- time to first event;
-- total latency;
-- validation/repair attempts;
-- user retry rate; and
-- whether follow-up answers changed the final result.
-
-Then evaluate:
-
-- removing duplicated instructions or prior prose;
-- deriving a compact job-requirements representation once;
-- sending only gap-relevant resume sections during follow-up;
-- model choice by stage; and
-- caching immutable prompt prefixes if the selected provider supports it.
-
-Avoid lossy resume summarization until evals show it preserves decision-critical
-evidence. Token savings are not worthwhile if they cause fabricated or omitted
-experience.
-
-## Implementation sequence
-
-Each phase ends with a deployable or locally demonstrable vertical result.
-
-### Phase 1 — Fix personal-use correctness and isolate demo
-
-Goal: make the existing personal workflow trustworthy before restructuring it.
-
-- Preserve the submitted job description through follow-up.
-- Fix startup cleanup or remove reliance on startup-global workflow files.
-- Disable production debug behavior and sanitize errors.
-- Move public demo to isolated routes/fixtures.
-- Add Pydantic models for demo and live review output.
-- Validate fixtures and deterministic redlines through the same contracts.
-
-Exit gate:
-
-- A live review/follow-up uses the correct inputs.
-- Repeated and concurrent demo calls cannot change live state.
-- Malformed model output leaves prior state intact.
-
-### Phase 2 — Introduce the review domain slice
-
-Goal: replace implicit current-run files with one explicit, durable review.
-
-- Add database configuration and migrations.
-- Add `User`, `Resume`, `Review`, artifact, and `ModelCall` persistence.
-- Implement repository interfaces and `CurrentUser`.
-- Implement `ReviewService` state transitions.
-- Add `/api/v1/me`, resume, create-review, and get-review endpoints.
-- Initially call the current single LLM prompt behind the new adapter to limit
-  simultaneous change.
-- Keep old endpoints as a compatibility facade if needed.
-
-Exit gate:
-
-- One user can create, refresh, and retrieve a durable review through the new
-  API with no `temp/` dependency.
-
-### Phase 3 — Simplify the frontend around the new API
-
-Goal: make the web application deliberate and restoreable, then retain Chrome
-as a thin platform shell if it remains a supported surface.
-
-- Split `extension-panel.tsx` into the product components and platform
-  boundaries defined in the frontend refactoring plan.
-- Implement the web adapters for auth, storage, source URL, and shell; preserve
-  the narrow interfaces the later Chrome adapters will implement.
-- Add a typed API client for `/api/v1`.
-- Add typed handling for the common API error envelope.
-- Replace interacting workflow booleans with explicit workflow states.
-- Treat fetched review/resume data as server state.
-- Route review pages by durable review ID.
-- Implement a responsive full-page web shell with no Chrome-only controls.
-- Keep redline editing local until the user explicitly saves a final resume.
-- Implement finalized-resume save plus copy/download behavior.
-- Remove or development-gate the backend selector.
-- Choose one package manager; restore non-interactive lint and typecheck.
-- Stop suppressing lint/type errors during the supported web build.
-- Freeze the Chrome extension as a non-beta surface and document its last known
-  build; do not let Chrome-specific constraints shape the web refactor.
-
-Exit gate:
-
-- The web app can reload mid-review or after completion and recover from the
-  server without mixing demo/live/auth state.
-- The supported build passes typecheck, lint, contract tests, and a browser
-  smoke test.
-- Chrome-only code is confined to the Chrome platform and extension shell.
-
-### Phase 4 — Add durable local streaming
-
-Goal: prove the transport and recovery model locally without paid model calls
-or production-host dependencies.
-
-- Add typed, sequenced SSE review events with safe errors.
-- Keep the durable review record as source of truth; events are notifications,
-  not the only copy of workflow state.
-- Implement the web event client, reconnect behavior, and polling fallback.
-- Drive tests with deterministic mocked provider chunks, malformed chunks,
-  timeouts, disconnects, and completed-server/failed-client cases.
-- Ensure reload or reconnect cannot duplicate a completed provider call.
-
-Exit gate:
-
-- The local web app receives incremental mocked output and useful status.
-- Disconnect, refresh, and fallback polling recover the durable review without
-  duplicate work or false completion.
-- The normal automated suite makes no paid LLM calls.
-
-### Phase 5 — Validate the production boundary
-
-Goal: validate the now-relevant deployment assumptions after the supported web
-and streaming paths exist.
-
-- Validate Google web OAuth callback, state, nonce, expiry, logout, and
-  allowlist paths.
-- Run the deployed personal web workflow end to end.
-- Verify SQLite durability, locking, backup/restore, and overlapping writes on
-  the production host.
-- Verify Groq connectivity through the OpenAI-compatible adapter from the
-  production host.
-- Verify that SSE chunks reach the deployed web client without buffering or
-  premature termination; retain durable polling if the host cannot support it.
-- Confirm production sets `LANGSMITH_TRACING_V2=false`; development tracing may
-  remain enabled for the accepted demo and personal data.
-
-Exit gate:
-
-- Each production validation risk is converted to validated behavior,
-  configuration work, or a reproducible defect.
-
-### Phase 6 — Make the LLM workflow efficient
-
-Goal: reduce repeated tokens and improve time-to-value without weakening output
-quality.
-
-- Establish baseline token, latency, failure, and fixture-quality measurements
-  for the current prompt.
-- Implement typed structured-analysis output.
-- Persist and emit analysis completion before tailoring.
-- Implement the tailored-resume stage through Groq's streaming interface.
-- Configure explicit provider connect/read/total timeouts and safe retry rules.
-- Map provider failures into the common API error contract.
-- Implement compact follow-up inputs.
-- Run deterministic redline only after final resume validation.
-- Compare the staged workflow with the baseline evaluation set.
-
-Exit gate:
-
-- The UI receives useful analysis before tailoring completes.
-- Token and latency measurements improve without material quality loss.
-- Ambiguous partial generations are never automatically replayed.
-
-### Phase 7 — Prove multi-user isolation
-
-Goal: extend the personally useful workflow to a handful of invited users.
-
-- Scope every repository operation by owner.
-- Add per-user resume create/update/archive behavior.
-- Add two-user authorization and overlapping-request tests.
-- Add optimistic version checks for answers/retries.
-- Validate SQLite concurrency/backup assumptions or move to Postgres.
-
-Exit gate:
-
-- Two users can run overlapping review and follow-up workflows with no
-  cross-user reads, writes, or state corruption.
-
-### Phase 8 — Remove compatibility paths and harden beta operations
-
-Goal: leave one supported architecture.
-
-- Remove global workflow files and old endpoints after migration.
-- Quarantine obsolete extension iframe/manual-panel paths without undertaking
-  the full extension refactor.
-- Add structured request, review, and model-call logging.
-- Add readiness checks and operator-facing failure inspection.
-- Enforce retention/deletion policy and add proper tracing content, access, and
-  retention guards before considering tracing for beta users.
-- Remove unused frontend/backend dependencies and stale configuration.
-- Make backend tests, schema tests, frontend typecheck/lint/build, and web smoke
-  tests a release gate.
-- Update architecture, API, frontend, backlog, and operating docs in the same
-  change that retires a compatibility path.
-- Document backup, restore, deploy, and rollback.
-
-Exit gate:
-
-- The supported web/beta workflow deploys through a repeatable release gate and
-  has a tested rollback/recovery path.
-
-### Phase 9 — Refactor the Chrome extension after beta
-
-Goal: make the extension a thin P2 shell over the proven shared product core.
-
-- Reassess whether the extension remains worth supporting after web-beta
-  learning.
-- Retain one Manifest V3 side-panel entry.
-- Implement Chrome auth, storage, and active-tab adapters.
-- Mount the shared review/resume product core without web-shell assumptions.
-- Remove the iframe/content-script panel and parallel generated/source paths.
-- Add extension typecheck, build, contract, and manual side-panel smoke gates.
-
-Exit gate:
-
-- The extension consumes the same `/api/v1` contracts and shared product
-  components without adding Chrome conditionals to product code.
-
-## Testing strategy
-
-### Testing approach
-
-Tests are decision and migration guardrails, not a coverage-maximization
-exercise. Protect behavior that matters to the user and contracts shared across
-components; avoid locking in global files, route-function structure, React
-component layout, or other implementation details we intend to replace.
-
-Use four distinct test types:
-
-| Test type | Purpose | Treatment |
-|---|---|---|
-| Characterization | Preserve valuable behavior that works today | Must pass before and after refactoring |
-| Known-defect regression | State the correct behavior for a confirmed defect | Mark strict `xfail`/todo with a reason; convert to passing in the increment that fixes it |
-| New-boundary unit/contract | Prove a service, repository, schema, state transition, or adapter as it is introduced | Add in the same change as the new boundary |
-| Production validation | Prove OAuth, hosting, filesystem, provider, SSE, and deployed-browser behavior | Never substitute mocks or unit tests for this evidence |
-
-Principles:
-
-- Write the behavioral assertion before changing the corresponding code.
-- Prefer small deterministic fixtures over production or personal data.
-- Keep all provider, Google, network, clock, and filesystem dependencies
-  controlled in unit tests.
-- The normal pytest suite blocks `prompt_llm` by default. A test must inject a
-  fake response explicitly; live quality evaluations use a separate,
-  deliberately invoked command and are never part of routine test runs.
-- Give each backend test isolated mutable paths or a transaction-scoped test
-  database; tests must not write repository `temp/` or user files.
-- Assert schemas, state transitions, ownership, and decision-critical values.
-  Avoid full-response snapshots that make harmless wording changes expensive.
-- Test demo and mocked-live responses against the same consumer contract.
-- Test failures and retries as first-class behavior, including the state left
-  behind after failure.
-- For multi-user behavior, test interleavings and forbidden access—not only two
-  sequential happy paths.
-- For streaming, test event ordering, partial chunks, disconnects, reconnects,
-  timeouts, and final durable state independently.
-- LLM quality is evaluated with representative fixtures and evidence checks;
-  unit tests prove orchestration and contracts, not whether a resume rewrite is
-  persuasive.
-
-Known-defect rules:
-
-- Every `xfail` or todo names the defect and corresponding backlog scope.
-- `strict=True` is used for pytest so an unexpected pass forces review.
-- Do not change an assertion merely to match incorrect current behavior.
-- Remove the marker in the same change that fixes the defect.
-- No new unexplained `xfail`, skipped test, or test todo enters the release
-  gate.
-
-Every increment should finish with:
-
-1. focused tests for the changed boundary;
-2. the complete backend and frontend unit/contract suites;
-3. typecheck and build for the supported web client;
-4. the increment's smallest relevant integration or browser smoke test;
-5. review of newly introduced skips, todos, warnings, and expected failures;
-   and
-6. an update to the living docs when a contract or decision changed.
-
-### Pre-refactor safety net
-
-Established on 2026-07-25:
-
-```text
-pytest -q
-cd BrowserExtension
-npm test
-npx tsc --noEmit
-npm run build
-```
-
-The initial backend suite isolates mutable files per test and covers prompt
-assembly, live/demo API behavior, response transformation, auth/authz, startup,
-failure paths, and deterministic redlines. Known defects are strict `xfail`
-tests so they do not block the baseline but will become passing regression
-tests when fixed.
-
-The initial frontend suite covers token storage/expiry, API request contracts,
-401 handling, Markdown cleanup, and redline transformations. The mixed-change
-parser defect is recorded as a test todo. Do not add broad component tests
-around the current monolithic panel; add them as product boundaries are
-extracted.
-
-### Backend
-
-- Domain transition unit tests
-- Repository ownership and transaction tests
-- Route auth/authz and response-schema tests
-- Fixture contract tests shared by demo and mocked live mode
-- Model-adapter tests with chunked, malformed, interrupted, and timeout streams
-- Two-user concurrency tests
-
-### Frontend
-
-- Reducer/state-machine transition tests
-- Typed API/event parser tests
-- Demo/live contract rendering tests
-- Redline accept/reject/edit tests
-- Web OAuth callback failure-path tests
-- Reload/reconnect behavior with a durable review
-
-### End to end
-
-Minimum production-like scenarios:
-
-1. public demo, including follow-up;
-2. authorized live user, first review;
-3. authorized live user, follow-up update;
-4. refresh during and after review;
-5. invalid/expired token;
-6. allowlisted vs non-allowlisted user;
-7. provider timeout/malformed output;
-8. two overlapping users; and
-9. streamed connection interruption and recovery.
-
-## Observability
-
-Use structured events with:
-
-- request ID;
-- internal user ID or non-reversible safe identifier;
-- review ID;
-- route/stage;
-- status and safe error code;
-- duration;
-- model/provider/prompt version; and
-- token usage.
-
-Never log:
-
-- bearer/access/ID tokens;
-- resume or job-description content;
-- question answers;
-- raw prompts/responses; or
-- provider exceptions that may contain request content.
-
-LangSmith tracing is acceptable for development with the accepted demo and
-personal data. Production sets `LANGSMITH_TRACING_V2=false` until content,
-access, and retention guards exist. The application still owns the minimum
-model-call metadata needed for cost, latency, failure, and prompt-version
-analysis.
-
-## Migration and rollback
-
-- Introduce the new database and `/api/v1` alongside current routes.
-- Seed the operator's current resume through an explicit migration command.
-- Do not migrate `temp/` files as durable product records; treat them as
-  inspectable legacy artifacts.
-- Keep old routes read-only or behind a feature flag during a short transition.
-- Make frontend selection of old/new API a deployment configuration, not a
-  user-visible toggle.
-- Back up the database before schema migration.
-- Roll back by deploying the prior application and restoring a compatible
-  database backup; document schema compatibility per release.
-
-## Key risks and spikes
-
-| Risk | Smallest validation |
-|---|---|
-| PythonAnywhere buffers SSE | Deploy a minimal authenticated SSE heartbeat and measure chunk arrival in the web client. |
-| SQLite is unsafe under deployment topology | Run overlapping write/read tests in the actual host and verify persistence across reload/deploy. |
-| Split prompts reduce output coherence | Compare current one-call output with staged output on representative job/resume fixtures. |
-| Follow-up context reduction drops evidence | Build an eval checking every material claim against the resume and answers. |
-| Web OAuth configuration is stale | Inspect registered redirects and run success/failure callback paths. |
-| LangSmith tracing exposes beta-user data | Require `LANGSMITH_TRACING_V2=false` in production readiness checks until content, access, and retention guards exist. |
-| Extension and web adapters drift | Run the shared contract suite against both adapters; choose one primary release surface. |
-
-## Resolved decisions and remaining questions
-
-Resolved:
-
-- Web is the primary limited-beta client.
-- Chrome extension refactoring is deferred to a post-beta P2 increment.
-- SQLite is the first-beta persistence layer, subject to production validation.
-- Users can maintain multiple resume versions and select one per review.
-- Synthetic demo sessions persist for 24 hours to support refresh/reconnect.
-- Groq is the supported provider behind an OpenAI-compatible adapter.
-- Resumes, job descriptions, answers, reviews, and model-call metadata persist
-  throughout development.
-- LangSmith traces are acceptable for demo/personal development; production
-  tracing stays disabled until proper guards exist.
-
-Remaining:
-
-- Which Groq model should be the supported baseline for each LLM stage?
-- Does the intended hosting path deliver SSE chunks reliably, or should the
-  first release use durable status plus polling?
-- What deletion controls should users receive during development?
-- What retention period replaces development-long persistence before use
-  expands beyond the limited beta?
-
-## Readiness before implementation
-
-No further architecture design is required before Increment 1. Complete these
-short setup decisions first:
-
-1. **Create a recoverable baseline.** Review the dirty working tree and commit
-   or otherwise snapshot the documentation, tests, current provider change,
-   and unrelated user work before application refactoring begins.
-2. **Align sequence in both planning documents.** Reflect the chosen order:
-   personal correctness and demo, durable single-user review state, web
-   refactor, local streaming, production validation, LLM efficiency, then
-   multi-user isolation.
-3. **Use the current demo as the acceptance scenario.** The checked-in demo
-   resume, job description, initial response, and follow-up response are the
-   initial end-to-end behavioral thread through the increments. Validate their
-   schema and internal consistency before treating them as the acceptance
-   baseline:
-   - `demo/resume_demo.txt`
-   - `demo/job_description_demo.txt`
-   - `demo/API_response_review_demo.json`
-   - `demo/API_response_review_add_info_demo.json`
-4. **Confirm the first-slice boundary.** The isolated demo slice changes no live
-   route or personal data until its schemas, service behavior, and tests pass.
-5. **Define “preserve” versus “replace.”** Preserve truthful analysis,
-   follow-up continuity, deterministic redlines, and user control. Treat the
-   current file layout, demo flags, route shapes, panel structure, and exact
-   model wording as replaceable.
-
-Decide these just in time rather than blocking Increment 1:
-
-- canonical web URL and deployment topology — before the web increment;
-- SQLite backup/deploy mechanics — before durable persistence is deployed;
-- exact Groq model, token/latency targets, and quality eval thresholds — before
-  the LLM-efficiency increment;
-- whether production hosting supports SSE — validate after local streaming
-  works; durable polling remains the fallback;
-- user-facing deletion and post-development retention — before limited beta;
-  and
-- whether the extension remains worth supporting — after web-beta learning.
-
-## First implementation slice
-
-The first coding slice should be:
-
-> Create an isolated, schema-validated demo review through a `ReviewService`
-> and render it through the current frontend without reading or writing
-> `temp/`.
-
-Why first:
-
-- directly removes a P0 exposure;
-- establishes the service and response-schema boundaries needed by live mode;
-- is deterministic and inexpensive to test;
-- does not require solving multi-user persistence and streaming at the same
-  time; and
-- provides a safe fixture harness for every later backend and frontend change.
+Every owned-resource operation derives the user from the verified token and
+scopes the query by that internal user. No request accepts a caller-selected
+`user_id`.
+
+Use one stable safe error envelope. Do not retain a compatibility facade: add
+the new API, switch the single supported web client in a coordinated increment,
+and remove the old routes after the new flow is verified.
+
+## Frontend boundary
+
+The first decomposition should be only as large as the current problems require:
+
+- typed API client;
+- `ReviewWorkspace` with an explicit reducer or state model;
+- resume management and active-resume selection;
+- review/fit/gap/question presentation; and
+- existing redline display and editing behavior.
+
+Separate durable server state, workflow state, and ephemeral editing state.
+Do not create Chrome/web platform interfaces or a predicted tree of feature
+modules. Split components further when their behavior becomes independently
+complex.
+
+## Testing and safety rules
+
+- Write the behavioral assertion before fixing each confirmed defect.
+- Normal tests must block live provider calls unless a fake is explicitly
+  injected.
+- Validate complete model output before replacing the prior valid artifact.
+- Keep every test's mutable filesystem or database isolated.
+- Validate canned demo fixtures and mocked live responses through the same
+  consumer schemas.
+- Preserve strict known-defect tests until the fixing increment makes them pass.
+- Run focused tests, the complete backend suite, frontend tests, typecheck, and
+  the supported web build after each relevant increment.
+- Production validation is required for Google OAuth, Groq, hosting, and SQLite
+  persistence; mocks do not establish those boundaries.
+
+Never log tokens, resumes, job descriptions, answers, raw prompts, or raw model
+responses. Production tracing remains disabled until explicit content, access,
+and retention controls exist.
+
+## Explicit deferrals
+
+Do not let these items shape Increment 1 or the minimum durable architecture:
+
+- SSE or other browser-visible streaming;
+- persisted demo sessions or demo continuity;
+- a three-stage LLM workflow;
+- multiple provider support;
+- separate artifact and model-call tables;
+- optimistic artifact or answer version checks;
+- finalized-resume persistence and version checks;
+- compatibility facades;
+- Chrome extension implementation or shared platform adapters until the
+  browser-native jobs are reassessed;
+- advanced retry orchestration and operator failure inspection; and
+- Postgres unless production SQLite validation fails.
+
+## Implementation source of truth
+
+[docs/backlog.md](docs/backlog.md) is the only source of truth for ordered
+increments, release gates, and exit criteria. Architecture and contract
+documents describe the current system and the next supported boundary; they do
+not maintain duplicate phase plans.

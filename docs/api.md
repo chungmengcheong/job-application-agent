@@ -1,371 +1,280 @@
 # AI Recruiting Agent — Backend API Notes
 
-This is a living record of the current FastAPI contract and workflow behavior.
-It documents what callers can rely on today and highlights places where the
-implementation does not yet meet the intended contract.
+This document records the current API and the minimum replacement contract. It
+does not define implementation order; see [backlog.md](backlog.md).
 
-## Purpose
-
-The backend serves the marketing page and demo assets, authenticates and
-authorizes invited users, loads a stored resume, asks an LLM to review that
-resume against a job description, creates deterministic resume redlines, and
-reruns the review after follow-up answers.
-
-Primary implementation:
-
-- `backend/api.py` — routes, prompt assembly, file workflow, LLM call
-- `backend/security.py` — Google token verification, allowlist, OAuth bounce
-- `backend/redline.py` — token-level resume diff
-- `prompts/prompt_resume_review_GOLD.txt` — LLM behavior and JSON schema
-
-## Input contract
+## Current API
 
 ### Authentication
 
-Protected live-mode calls send:
+Authenticated requests send a Google ID token as `Authorization: Bearer ...`.
+The backend verifies signature, issuer, audience, and expiry, then applies the
+configured email/domain allowlist. Authentication currently protects route
+entry but does not partition the global workflow files by user.
 
-```http
-Authorization: Bearer <Google ID token>
+### Current routes
+
+| Route | Current purpose | Material issue |
+|---|---|---|
+| `POST /jobdescription` | Return the demo-seeded job description | URL extraction is not implemented |
+| `POST /review` | Generate fit, gaps, questions, and tailored resume | Does not save the submitted job description |
+| `POST /questions` | Regenerate the review using answers | Rereads the global demo-seeded job description |
+| `GET /resume` | Load/save/delete the single resume | Demo load can alter the shared baseline |
+| `GET /oauth2cb` | Legacy Chrome OAuth bounce | Deprecated with the extension |
+
+Live `/review` and `/questions` require authentication. Caller-controlled demo
+flags select checked-in responses and bypass normal live generation.
+
+### Current live dataflow
+
+```text
+GET /resume?command=load
+    -> copy one user resume to temp/resume_baseline.txt
+
+POST /review(job description)
+    -> build one combined prompt
+    -> provider returns fit + gaps + questions + tailored resume
+    -> rotate global response files
+    -> generate deterministic redline
+
+POST /questions(answers)
+    -> write global answers
+    -> reread temp/job_description.txt
+    -> repeat the combined review call
 ```
 
-The backend verifies the token against `GOOGLE_WEB_CLIENT_ID`, then permits the
-request when the verified email matches `ALLOWED_EMAILS` or its domain matches
-`ALLOWED_DOMAINS`.
+This design has no review ID or durable status. If a request times out, the
+browser cannot reconcile the outcome.
 
-Demo branches run before authentication in `/review`, `/questions`, and
-`/resume`, so those branches are public.
+### Current state ownership
 
-### `POST /jobdescription`
+| State | Current location | Scope |
+|---|---|---|
+| Stored resume | `user/resume.txt` | one operator by convention |
+| Baseline resume | `temp/resume_baseline.txt` | entire backend process |
+| Job description | `temp/job_description.txt` | entire backend process |
+| Answers | `temp/user_response.json` | entire backend process |
+| Current/prior responses | `temp/*.json` | entire backend process |
+| Demo inputs/results | `demo/*` | checked-in fixtures |
 
-Authentication: none.
+## Increment 1 contract
+
+Increment 1 preserves current route shapes and the current combined live
+generation while correcting their behavior:
+
+- preserve the submitted job description through follow-up;
+- clean startup files independently;
+- disable production debug behavior;
+- validate the full provider result before replacing valid state;
+- return stable safe errors; and
+- make canned demo behavior read-only, fixture-based, and unable to touch live
+  files.
+
+Minimum response schemas cover fit, gaps, questions, tailored resume, and safe
+errors only. Streaming, artifact versions, and future table shapes do not enter
+these contracts.
+
+## Increment 1.5 two-call contract
+
+Groq becomes the only supported provider through one thin injectable client.
+
+### Call 1: analysis and questions
+
+Input:
 
 ```json
 {
-  "url": "https://example.com/job",
-  "demo": false
+  "resume": "...",
+  "job_description": "..."
 }
 ```
 
-| Field | Type | Required | Current meaning |
-|---|---|---:|---|
-| `url` | string | yes | Accepted but not used to retrieve content |
-| `demo` | boolean | no | Defaults to `false`; both values currently return the seeded demo job description |
-
-### `POST /review`
-
-Authentication: required when `demo` is `false`.
+Validated output:
 
 ```json
 {
-  "job_description": "Full pasted job description",
-  "url": "https://example.com/job",
-  "demo": false
+  "fit": {
+    "score": 0,
+    "rationale": "..."
+  },
+  "gaps": [],
+  "questions": []
 }
 ```
 
-| Field | Type | Required | Current meaning |
-|---|---|---:|---|
-| `job_description` | string | yes | Injected into the review prompt |
-| `url` | string | yes | Accepted for tracking but not persisted or logged structurally |
-| `demo` | boolean | no | Returns a checked-in response fixture when `true` |
+Call 1 does not return a tailored resume.
 
-Before live review, the caller is implicitly expected to have loaded a resume
-with `GET /resume?command=load`. The API does not enforce that sequence; if it
-has not happened, the global working baseline may still be the demo resume.
+### Call 2: revised analysis and tailored resume
 
-### `POST /questions`
+Input:
 
-Authentication: required when `demo` is `false`.
+```json
+{
+  "resume": "same resume used in Call 1",
+  "job_description": "same job description used in Call 1",
+  "qa_pairs": [
+    {
+      "question": "...",
+      "answer": "..."
+    }
+  ]
+}
+```
+
+Validated output:
+
+```json
+{
+  "fit": {
+    "score": 0,
+    "rationale": "..."
+  },
+  "gaps": [],
+  "tailored_resume": "..."
+}
+```
+
+Call 2 returns revised fit and gaps. It need not return another question set.
+The server creates redline markup only after the complete tailored resume
+validates.
+
+The public browser contract uses ordinary JSON. Provider-side streaming, if
+used internally, does not imply SSE. Browser-visible streaming and event
+contracts are deferred.
+
+## Durable `/api/v1` contract
+
+After SQLite persistence is introduced, the supported authenticated API is:
+
+```text
+GET    /api/v1/me
+
+GET    /api/v1/resumes
+POST   /api/v1/resumes
+GET    /api/v1/resumes/{resume_id}
+PUT    /api/v1/resumes/{resume_id}
+POST   /api/v1/resumes/{resume_id}/activate
+
+POST   /api/v1/reviews
+GET    /api/v1/reviews/{review_id}
+POST   /api/v1/reviews/{review_id}/answers
+```
+
+### Create review
+
+```json
+{
+  "resume_id": "res_...",
+  "job_description": "...",
+  "source_url": "https://example.com/job"
+}
+```
+
+The server verifies that the resume belongs to the current user, stores an
+immutable resume snapshot and job description, runs Call 1, and returns the
+durable review in `awaiting_answers` or `failed` state.
+
+### Submit answers
 
 ```json
 {
   "qa_pairs": [
     {
-      "question": "What was the measurable outcome?",
-      "answer": "Revenue increased 15%."
+      "question": "...",
+      "answer": "..."
     }
-  ],
-  "demo": false
+  ]
 }
 ```
 
-| Field | Type | Required | Current meaning |
-|---|---|---:|---|
-| `qa_pairs` | array of string-to-string objects | yes | Saved to the global `temp/user_response.json` file and added to the next prompt |
-| `demo` | boolean | no | Returns a checked-in follow-up fixture when `true` |
+The server retrieves the original resume snapshot and job description, runs
+Call 2 with the submitted answers, validates the result, generates the redline,
+and persists `completed` or `failed` state. No artifact version is required
+initially.
 
-The Pydantic type permits arbitrary string keys in each object; the practical
-client convention is exactly `question` and `answer`.
+### Review status
 
-### `GET /resume`
+Use only:
 
-Authentication: required when `demo=false`.
-
-Query parameters:
-
-| Parameter | Type | Required | Current meaning |
-|---|---|---:|---|
-| `command` | string | yes | Only `load` succeeds |
-| `demo` | boolean | no | Copies the demo resume into the global working baseline |
-
-Example:
-
-```http
-GET /resume?command=load&demo=false
-Authorization: Bearer <Google ID token>
+```text
+processing | awaiting_answers | completed | failed
 ```
 
-### Other routes
-
-| Route | Authentication | Purpose |
-|---|---|---|
-| `GET /` | none | Serve `static/index.html` |
-| `GET /health` | none | Return a basic process heartbeat |
-| `GET /oauth2cb` | none | Forward an OAuth URL fragment to the configured Chrome extension callback |
-| `/static/*` | none | Serve checked-in static assets |
-| `/docs`, `/redoc`, `/openapi.json` | none | FastAPI defaults; enabled by the current app configuration |
-
-## Output contract
-
-### Review response
-
-Both `/review` and `/questions` return this practical shape:
-
-```json
-{
-  "Fit": {
-    "score": 7,
-    "rationale": "Brief assessment and positioning recommendation."
-  },
-  "Gap_Map": [
-    {
-      "JD Requirement/Keyword": "Required capability",
-      "Present in Resume?": "Partial",
-      "Where/Evidence": "Evidence or absence in the source resume.",
-      "Gap handling": "Rephrase, add truthful evidence, or omit."
-    }
-  ],
-  "Questions": [
-    "A material follow-up question?"
-  ],
-  "Tailored_Resume": "Resume text containing server-generated redline markup"
-}
-```
-
-Important details:
-
-- `Fit.score` is prompted as an integer from 1 through 10, but is not validated
-  after generation.
-- The prompt permits `Y`, `N`, or `Partial` for `Present in Resume?`; one
-  frontend TypeScript interface narrows this incorrectly to `Y | N`.
-- On a live response, `Tailored_Resume` is not the LLM's plain revised resume.
-  The server replaces it with a diff against the working baseline:
-
-```html
-<span style="color:#c00000"><del>removed text</del></span>
-<span style="color:#008000"><add>added text</add></span>
-```
-
-- Demo responses are returned directly from fixture JSON and are not normalized
-  through the same parse/diff path.
-- There is no declared FastAPI response model. Malformed or schema-drifting LLM
-  JSON can therefore become a 500 error or a response the frontend only
-  partially understands.
-
-### Other responses
-
-`POST /jobdescription`:
-
-```json
-{"job_description": "Demo job description text"}
-```
-
-`GET /resume?command=load`:
-
-```json
-{"resume": "Stored or demo resume text"}
-```
-
-Invalid resume command:
-
-```json
-{"error": "Invalid command"}
-```
-
-Missing credentials on non-demo `/resume` currently returns HTTP 200 with:
-
-```json
-{"error": "Authentication required to load resume."}
-```
-
-`GET /health`:
-
-```json
-{"message": "Hello World"}
-```
+If synchronous requests prove unreliable, `POST` may later return `202` with a
+review ID and the client may poll `GET /api/v1/reviews/{review_id}`. SSE,
+WebSockets, and sequenced events remain deferred.
 
 ### Error contract
 
-| Condition | Current status | Body |
-|---|---:|---|
-| Request body/query validation fails | 422 | FastAPI validation detail |
-| Missing or invalid ID token | 401 | `{"detail": "..."}` |
-| Authenticated but not allowlisted | 403 | `{"detail": "..."}` |
-| LLM SDK call raises | 502 | `{"detail": "generate_review: OpenAI call failed: ..."}` |
-| Invalid LLM JSON or missing expected key | typically 500 | FastAPI debug-dependent server error |
-| Invalid `/resume` command | 200 | `{"error": "Invalid command"}` |
-| Missing `/resume` credentials | 200 | `{"error": "Authentication required..."}` |
+Every `/api/v1` error uses one safe envelope:
 
-The app is instantiated with `debug=True`, so unexpected production error
-behavior may disclose more detail than intended.
-
-## Dataflow
-
-### Startup
-
-1. Load `.env`.
-2. Create the global Groq LLM and LangSmith clients. Tracing defaults on for
-   development and can be disabled through `LANGSMITH_TRACING_V2=false`.
-3. Create `temp/`.
-4. Copy `demo/resume_demo.txt` to `temp/resume_baseline.txt`.
-5. Copy `demo/job_description_demo.txt` to `temp/job_description.txt`.
-6. Attempt to remove current/prior LLM output, revised resume, and user answers.
-
-The cleanup is wrapped in one `try` block. The first missing file stops the
-remaining removals, so stale files later in the sequence can survive startup.
-
-### Initial live review
-
-1. Client calls `/resume?command=load`.
-2. Backend authenticates and authorizes the caller.
-3. Backend copies `user/resume.txt` to `temp/resume_baseline.txt`.
-4. Client sends a pasted job description to `/review`.
-5. Backend authenticates and authorizes the caller.
-6. `create_review_prompt()` reads:
-   - the request's job description;
-   - the global working baseline resume;
-   - optional `user/additional_candidate_info.txt`;
-   - optional current LLM fit/gap output; and
-   - optional global follow-up answers.
-7. Backend injects that JSON into `prompt_resume_review_GOLD.txt`.
-8. Backend makes one synchronous LLM request.
-9. Backend rotates `LLM_response_current.json` to
-   `LLM_response_prior.json`, then saves the new raw response.
-10. Backend parses the response as JSON and reads `Tailored_Resume`.
-11. Backend saves the plain revised resume and replaces the response field with
-    a deterministic diff against the baseline.
-12. Backend returns the review object.
-
-### Follow-up review
-
-1. Client posts every displayed question and its answer to `/questions`.
-2. Backend authenticates and authorizes the caller.
-3. Backend overwrites the global `temp/user_response.json`.
-4. Backend constructs an internal `JobListing` using
-   `temp/job_description.txt`.
-5. `/questions` calls the `/review` function directly.
-6. The second prompt includes prior `Fit`, prior `Gap_Map`, and `qa_pairs`.
-7. The normal review save, rotation, diff, and response steps repeat.
-
-Critical contract mismatch: `/review` does not save its request job description
-to `temp/job_description.txt`. Therefore the follow-up flow currently uses the
-startup-seeded demo job description rather than the user's pasted job
-description.
-
-### Demo flow
-
-1. The panel starts with demo mode enabled.
-2. It calls `/jobdescription` and `/resume` to load checked-in demo inputs.
-3. `/resume?demo=true` also copies the demo resume into the shared working
-   baseline.
-4. `/review?demo=true` and `/questions?demo=true` return separate checked-in
-   JSON fixtures without LLM calls.
-
-The fixture outputs bypass the live response transformation, which allows demo
-and live behavior to drift.
-
-## Status model
-
-There is no durable job/status entity. A review request is synchronous and has
-only transport/UI state:
-
-```text
-idle
-  |
-  +-- submit --> loading --> succeeded
-                         \-> failed
+```json
+{
+  "error": {
+    "code": "MODEL_TIMEOUT",
+    "message": "The review took too long. Please try again.",
+    "request_id": "req_...",
+    "retryable": true
+  }
+}
 ```
 
-The frontend separately tracks:
+HTTP status communicates the failure class. Provider exceptions, prompts,
+tokens, resumes, job descriptions, and answers never appear in client errors or
+logs.
 
-- initial loading;
-- resume loading;
-- review loading;
-- follow-up submission;
-- authenticated/unauthenticated;
-- authorized/forbidden; and
-- demo/live mode.
+## Canned demo API
 
-The backend does not assign a review ID, request ID, idempotency key, lifecycle
-status, or retry status. If the client times out, it cannot determine whether
-the server or LLM completed. The API client does not retry `/review` or
-`/questions`; it retries `/jobdescription` and `/resume` once.
+The canned demo remains fixture-based. It may use dedicated demo routes or a
+clearly isolated equivalent, but it must:
 
-## State ownership
+- choose only server-owned fixtures;
+- make no Groq call;
+- create no account, session, or database record;
+- never resolve through live-user storage; and
+- return the same analysis and completed-result schemas used by the web client.
 
-### User-owned intent
+Demo session IDs, 24-hour retention, refresh recovery, and live user-provided
+demo inputs are not part of the design.
 
-| State | Owner | Location |
-|---|---|---|
-| Stored resume | Operator/user by filesystem convention | `user/resume.txt` |
-| Additional experience | Operator/user by filesystem convention | `user/additional_candidate_info.txt` |
-| Pasted job description | Browser until submitted | React component state |
-| Follow-up answers before submit | Browser | React component state |
+## Authenticated one-time trial
 
-### Server-owned state
+The future trial uses the normal owned `/api/v1` resources. Resume and job
+description may be collected in browser memory before login, but no persistence
+or provider call occurs until authentication and explicit submit. On submit the
+system creates or resolves the internal user, stores the resume, marks it active,
+and creates an owned review.
 
-| State | Location | Scope in current implementation |
-|---|---|---|
-| Working baseline resume | `temp/resume_baseline.txt` | Entire backend process |
-| Working job description | `temp/job_description.txt` | Entire backend process; demo-seeded |
-| Follow-up answers | `temp/user_response.json` | Entire backend process |
-| Current raw LLM response | `temp/LLM_response_current.json` | Entire backend process |
-| Prior raw LLM response | `temp/LLM_response_prior.json` | Entire backend process |
-| Revised plain resume | `temp/resume_revised.txt` | Entire backend process |
-| Demo inputs and outputs | `demo/*` | Checked-in global fixtures |
-| Prompt | `prompts/prompt_resume_review_GOLD.txt` | Checked-in global configuration |
+## Ownership rules
 
-Authentication establishes who may call the API; it does not scope any of
-these files. This is the primary blocker to a limited multi-user beta.
-
-### Browser-owned state
-
-The web client keeps tokens and backend mode in `localStorage`; the extension
-uses `chrome.storage.local`. Review content and question answers live only in
-React memory and disappear on reload. See [frontend.md](frontend.md).
+- Derive the internal user from verified token claims.
+- Never accept a client-selected `user_id`.
+- Scope every resume and review operation by owner.
+- Return the same not-found response for missing and other-user resources.
+- Confirm an activated resume is owned by the current user.
+- Store an immutable resume snapshot and job description on each review.
+- Treat `source_url` as optional page context. The web app may omit or supply
+  it; a future extension may populate it from the active page.
 
 ## Configuration
 
-Environment variables read by the current backend:
+Current or planned environment configuration includes:
 
 | Variable | Purpose |
 |---|---|
-| `GROQ_API_KEY` | Current working-tree LLM provider |
-| `OPENAI_API_KEY` | Historical/current-main provider; unused by the working-tree implementation |
-| `LANGSMITH_API_KEY` | Development LLM tracing |
-| `LANGSMITH_TRACING_V2` | Set to `false` to disable tracing in production |
-| `GOOGLE_WEB_CLIENT_ID` | ID-token audience |
-| `ALLOWED_EMAILS` | Comma-separated invited email addresses |
-| `ALLOWED_DOMAINS` | Comma-separated invited domains |
-| `CHROME_EXTENSION_ID` | OAuth bounce destination |
-| `HTTPS_PROXY` / `HTTP_PROXY` | PythonAnywhere outbound proxy configuration |
+| `GROQ_API_KEY` | supported provider after Increment 1.5 |
+| `GROQ_MODEL` | explicit supported model |
+| `LANGSMITH_TRACING_V2` | must be `false` in production |
+| `GOOGLE_WEB_CLIENT_ID` | Google ID-token audience |
+| `ALLOWED_EMAILS` | invited email allowlist |
+| `ALLOWED_DOMAINS` | invited domain allowlist |
+| `HTTPS_PROXY` / `HTTP_PROXY` | production outbound proxy when required |
 
-The code creates a custom `httpx.Client`, but does not pass it to the current
-Groq client. The intended proxy behavior therefore needs live validation.
+OpenAI configuration becomes obsolete after the Groq cutover and should be
+removed once rollback no longer requires it.
 
 ## Validation boundary
 
-This contract was derived from static code and fixture inspection on
-2026-07-25. Automated tests and build checks are recorded in
-[backlog.md](backlog.md). No live identity, LLM, proxy, streaming-host, or
-deployment call is asserted here.
+Static inspection establishes the current routes and file ownership defects. It
+does not establish deployed OAuth, Groq, proxy, timeout, SQLite, or hosting
+behavior. Those require explicit production checks.

@@ -1,224 +1,239 @@
 # AI Recruiting Agent — Frontend Notes
 
-This is a living record of the current frontend contract. The product UI is one
-React panel, but it runs inside two different hosts whose capabilities and
-authentication flows must remain explicit.
+This document records the current frontend and the supported web-only target.
 
-## Purpose
+## Current implementation
 
-The frontend:
+One large React panel currently runs in two hosts:
 
-- loads a demo or stored resume;
+- a statically exported Next.js web app; and
+- a Manifest V3 Chrome side-panel extension.
+
+Chrome extension development and releases are frozen. Its code remains
+temporarily because the web app and extension share `extension-panel.tsx` and
+build source under `BrowserExtension/`. The extension build, OAuth behavior,
+packaging, and installed-side-panel behavior are not current release gates.
+
+The current panel:
+
+- loads a canned demo or the single server resume;
 - accepts a pasted job description;
-- displays fit, gaps, and follow-up questions;
-- displays an LLM-tailored resume as interactive redlines;
-- copies the accepted/cleaned resume; and
-- handles Google login for the extension and web app.
+- shows fit, gaps, questions, and a tailored resume;
+- submits follow-up answers;
+- renders custom server-generated redline markup; and
+- stores accepted/rejected edits only in React state.
 
-## Runtime surfaces
+## Current web runtime
 
-### Chrome extension
+The Next.js app uses static export. `/` combines marketing content with the
+panel, `/panel` renders the panel directly, and `/auth-callback` processes the
+Google OAuth fragment.
 
-Manifest V3 defines a side panel at `panel.html`, a background service worker,
-a content script on all URLs, Chrome identity/storage/tab permissions, and
-backend/Google host permissions.
+Users paste the job description. The web app does not and should not pretend to
+read another browser tab.
 
-`npm run build-extension`:
+Current web authentication:
 
-1. runs the static Next.js export;
-2. copies the export under `dist-extension/app/`;
-3. rewrites root-relative asset paths in the exported `index.html`;
-4. extracts inline scripts into `extension-init.js` for extension CSP;
-5. injects the selected backend URL;
-6. writes `dist-extension/panel.html`; and
-7. updates the built manifest's resources and backend host permission.
+1. generate state and nonce;
+2. store them in `sessionStorage`;
+3. redirect to Google;
+4. parse tokens from the callback fragment;
+5. compare returned state and decoded nonce when stored expectations exist;
+6. store tokens in `localStorage`; and
+7. send the ID token as the API bearer credential.
 
-The extension icon opens Chrome's side panel. Separately, the content script
-contains an older iframe-panel path and listens for `openPanel`/`togglePanel`
-messages, but the current background script does not send those messages.
+The current callback does not fail closed when expected state or nonce is
+missing. Live callback registration remains a production validation item.
 
-### Web app
+## Frozen extension runtime
 
-The Next.js app is configured with `output: "export"` and can be served as
-static files. `/` renders marketing copy plus the panel; `/panel` renders the
-panel alone; `/auth-callback` processes the OAuth fragment and returns to
-`/panel`.
+The repository still contains a side-panel manifest, background worker,
+content-script/iframe legacy path, Chrome identity and storage code, and a
+custom static-export packaging script.
 
-On the web, “current tab URL” is the web app's own URL. Users must paste the job
-description; there is no page-reading implementation in either runtime.
+Do not refactor these into shared platform adapters. After the supported web app
+no longer depends on extension-only files:
 
-## Input contract
+- delete the manifest, worker, content script, Chrome OAuth/storage code,
+  packaging scripts, generated extension artifacts, and extension-only tests;
+- rename `BrowserExtension/` to a web-oriented directory in a contained change;
+  and
+- preserve a tagged Git reference and a short historical architecture note.
 
-The shared panel sends:
+After the web workflow is reliable, reassess a new thin extension against three
+browser-native jobs: extracting the active page's job description, assisting
+with user-approved application-form completion, and inspecting relevant
+networking context. Reuse the proven API and only the UI components that are
+actually economical to share.
 
-- `/jobdescription`: current URL and demo flag;
-- `/resume`: `command=load` and demo flag;
-- `/review`: pasted job description, current URL, and demo flag; and
-- `/questions`: every generated question paired with the current answer,
-  including empty answers.
-
-The panel expects the backend contracts documented in [api.md](api.md).
-
-## Output contract
-
-The panel expects:
-
-- a numeric `Fit.score` and string `Fit.rationale`;
-- `Gap_Map` rows with four exact, human-readable keys;
-- an array of question strings; and
-- a `Tailored_Resume` string containing Markdown-like text and custom
-  server-generated `<del>`/`<add>` markup.
-
-Runtime validation is limited to console warnings. Any object response is set
-as review state even if required fields are missing.
-
-The resume renderer uses regular expressions to identify custom markup.
-Accepted/rejected/edited changes modify the local string only; they are not
-saved to the backend.
-
-## Dataflow
+## Current dataflow
 
 ```text
 panel mounts
-    |
-    +--> inspect stored token
-    +--> determine current URL
-    +--> demo ON by default
-    |       |
-    |       +--> GET demo resume
-    |       +--> POST for demo job description
-    |
-user pastes/edits job description
-    |
-    +--> demo automatically turns OFF
-    |
-login if needed
-    |
-    +--> load stored server resume
-    |
-submit review --> POST /review (150-second timeout)
-    |
-    +--> Review tab: fit, gaps, follow-up questions
-    +--> Resume tab: interactive redline
-    |
-submit answers --> POST /questions (150-second timeout)
-    |
-    +--> replace review and resume state
+    -> load canned demo fixtures by default
+
+user exits demo and authenticates
+    -> load one stored server resume
+
+submit job description
+    -> current combined provider call
+    -> fit + gaps + questions + tailored redline
+
+submit answers
+    -> repeat combined provider call
+    -> replace review and resume state
 ```
 
-## Authentication flows
+The browser holds several interacting booleans for loading, authentication,
+authorization, submission, and demo/live mode. Review content and edits vanish
+on refresh because there is no durable review ID.
 
-### Extension
+## Canned demo experience
 
-1. Generate state and nonce in memory.
-2. Launch Google OAuth with `chrome.identity.launchWebAuthFlow`.
-3. Google redirects to PythonAnywhere `/oauth2cb`.
-4. The backend page forwards the URL fragment to the fixed extension's
-   `chromiumapp.org` callback.
-5. The extension validates state, extracts ID/access tokens, and saves them in
-   `chrome.storage.local`.
+Keep the current product experience:
 
-The extension generates a nonce but does not validate the ID token's nonce in
-client code. The backend's standard ID-token verifier validates signature,
-issuer, audience, and expiry, but the submitted nonce is not supplied to it.
+- fixed synthetic resume and job description;
+- canned initial and follow-up results;
+- no authentication, account, provider call, persistence, or continuity;
+- read-only server fixtures; and
+- the same frontend response schemas as mocked live behavior.
 
-### Web
+The future authenticated one-time trial is separate. It may collect a resume
+and job description in browser memory, then requires authentication and explicit
+submission before persistence or a custom provider call.
 
-1. Generate state and nonce.
-2. Save them in `sessionStorage`.
-3. Redirect the browser to Google with
-   `<web-origin>/auth-callback` as callback.
-4. Parse tokens from the URL fragment on `/auth-callback`.
-5. Compare returned state and decoded ID-token nonce when corresponding stored
-   values exist.
-6. Save tokens in `localStorage` and route to `/panel`.
+## Increment 1.5 workflow
 
-The callback checks state/nonce only when a stored expected value exists; a
-missing stored value does not fail closed. Live Google redirect registration
-for the Vercel origin was not verified in this review.
-
-For both clients, the ID token is the bearer credential sent to the backend.
-The access token is stored but not used by current product calls. There is no
-refresh-token flow; local expiry makes the user sign in again.
-
-## Status model
-
-The UI holds several independent booleans rather than one workflow state
-machine:
-
-- `isInitialLoading`
-- `isLoadingResume`
-- `isLoading`
-- `isSubmittingQuestions`
-- `isAuthenticated`
-- `isAuthorized`
-- `demoState`
-
-The visible workflow is approximately:
+The supported live UI changes to:
 
 ```text
-demo ready
-   |
-   +--> live unauthenticated --> authenticating --> authenticated/authorized
-   |                                  |                    |
-   |                                  +--> error           +--> resume loaded
-   |
-   +--> review loading --> review ready --> follow-up loading --> updated review
-              |
-              +--> error
+select active resume
+paste job description
+        |
+        v
+Call 1 loading
+        |
+        v
+fit + gaps + targeted questions
+        |
+user submits answers
+        |
+        v
+Call 2 loading
+        |
+        v
+revised fit + revised gaps + tailored redline
 ```
 
-Because the server does not expose a review ID or job status, a browser timeout
-cannot be reconciled with backend completion.
+Call 1 must not display or imply that a final tailored resume exists. Call 2
+uses the original resume snapshot and job description plus the answers.
+
+The browser waits for complete JSON responses. Do not add SSE or streamed-event
+state. If synchronous requests later prove unreliable, durable review polling is
+the first fallback.
+
+## Supported web target
+
+Use a deliberately small decomposition:
+
+```text
+web shell and routes
+    |
+    +-- typed API client
+    +-- ReviewWorkspace + explicit workflow state
+    +-- resume management and active selection
+    +-- review/fit/gap/question display
+    +-- existing redline display and local editing
+```
+
+Do not begin with a predicted hierarchy of feature folders or web/Chrome
+platform interfaces. Extract further components only as independently complex
+behavior emerges.
 
 ## State ownership
 
-| State | Web | Extension | Lifetime |
-|---|---|---|---|
-| ID/access tokens and expiry | `localStorage` | `chrome.storage.local` | Until logout/expiry/storage clear |
-| OAuth state and nonce | `sessionStorage` | Function-local memory | One login attempt |
-| Backend mode | `localStorage` | Browser storage plus in-page value | Persistent dev preference |
-| Job description | React state | React state | Current page session |
-| Review, questions, tailored resume | React state | React state | Current page/panel session |
-| Accepted/rejected resume edits | React string | React string | Current page/panel session |
-| Demo mode | React state, defaults on | React state, defaults on | Current page/panel session |
-| Active job-page URL | Web app URL fallback | Chrome active tab URL | Current panel session |
+### Durable server state
 
-No review content is restored after reload. No finalized resume edits are saved
-server-side.
+- current authenticated user;
+- stored resumes and active-resume selection;
+- review ID, immutable inputs, status, answers, and validated result; and
+- completed tailored resume and redline.
 
-## Build and deployment contract
+Refreshing the page refetches this state by ID.
 
-| Command | Intended result | Current caveat |
-|---|---|---|
-| `npm run dev` | Next.js dev server | Web surface only |
-| `npm run build` | Static export in `out/` | TypeScript and ESLint build errors are explicitly ignored |
-| `npm run build-extension` | Packaged extension in `dist-extension/` | Deletes/recreates the build directory and relies on HTML rewriting |
-| `NEXT_PUBLIC_BACKEND_URL=... npm run build` | Web build against selected backend | Requires build-time environment configuration |
-| `BACKEND_URL=... npm run build-extension` | Extension build against selected backend | Injected into generated `extension-init.js` |
+### Workflow state
 
-`npm run lint` currently opens Next.js's interactive ESLint setup rather than
-performing a non-interactive check because no ESLint configuration is present.
-There is no frontend test suite.
+A reducer or equivalent explicit model should represent approximately:
+
+```text
+booting
+demo_ready
+signed_out
+resume_required
+ready
+submitting_analysis
+awaiting_answers
+submitting_answers
+completed
+error
+```
+
+Authentication is a session fact, not something inferred from loaded resume
+content.
+
+### Local UI state
+
+- unsent job description;
+- unsent answers;
+- active tab;
+- redline visibility;
+- locally accepted/rejected/edited changes; and
+- copy feedback.
+
+Finalized-resume persistence is deferred. Copy/download and local editing may
+remain without creating additional server artifact versions.
+
+## Typed client contract
+
+Centralize:
+
+- `/api/v1` URLs;
+- bearer headers;
+- request and response schemas;
+- safe error codes;
+- timeouts; and
+- JSON parsing.
+
+Do not add SSE parsing, reconnect logic, provider events, or Chrome storage
+abstractions.
+
+## Build and release contract
+
+The supported web client must have:
+
+- one package manager and lockfile;
+- intentional dependency versions rather than `latest`;
+- non-interactive tests, lint, and typecheck;
+- no suppression of TypeScript or lint failures during builds;
+- one documented production build; and
+- a production-like browser smoke test.
+
+The current extension build is frozen and may be removed after web separation.
+A future extension would receive its own release contract if the browser-native
+jobs justify resuming it.
 
 ## Current web gaps
 
-- Web OAuth depends on a redirect URI derived from the deployed origin, while
-  the client ID is hard-coded and current Google-console registration is
-  unverified.
-- The static web app and backend live at different origins, so correct
-  `NEXT_PUBLIC_BACKEND_URL` and exact CORS configuration are required.
-- The root page lays a fixed-width/fixed-position extension-style panel over
-  web marketing content; `/panel` wraps the same component differently but the
-  panel itself still carries extension-oriented layout behavior.
-- Chrome-only concepts (active tab, local/cloud API toggle, extension close
-  behavior) remain visible or embedded in the shared component.
-- TypeScript and lint failures cannot currently block a production build.
-- The checked-in extension content script and manual `panel.html` represent
-  legacy/parallel paths that can drift from the actual side-panel package.
+- OAuth callback registration and failure behavior are not live-verified.
+- Missing expected OAuth state or nonce does not fail closed.
+- a fixed side-panel layout and Chrome-only concepts remain in shared code;
+- TypeScript and lint failures do not reliably block builds;
+- there is no durable review restoration;
+- the redline parser has a known mixed-change defect; and
+- multiple stored resumes and active selection do not yet exist.
 
 ## Validation boundary
 
-This document was derived from code and build configuration on 2026-07-25. It
-does not claim that the Vercel deployment, Google web callback, installed
-extension, responsive layout, or end-to-end login currently works.
+Static code and configuration establish the current state model and build
+shape. They do not prove deployed OAuth, responsive layout, durable restoration,
+or the full two-call browser workflow.
