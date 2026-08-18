@@ -365,10 +365,6 @@ def test_missing_tailored_resume_does_not_replace_prior_valid_state(
     assert isolated_paths["output_current_file"].read_text() == prior
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug: follow-up reads the startup demo job instead of the submitted job.",
-)
 def test_follow_up_uses_original_submitted_job_description(
     client: TestClient,
     isolated_paths: dict[str, Path],

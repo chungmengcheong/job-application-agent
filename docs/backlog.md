@@ -2,7 +2,8 @@
 
 This is the single source of truth for implementation sequence. Work one
 increment at a time and follow the listed item order unless new evidence changes
-a dependency.
+a dependency. Completed items move to [backlog-done.md](backlog-done.md) as they
+land, so this file always reflects only remaining work.
 
 `gates_release_type` records the earliest release that cannot proceed without
 the item:
@@ -19,14 +20,6 @@ configuration. **Validation risk** requires a live check.
 
 Goal: Make the existing personal workflow trustworthy before restructuring it.
 Preserve the current LLM workflow in this increment.
-
-### Preserve the submitted job description through follow-up
-
-**Confirmed.** `/review` does not save its job description, while `/questions`
-rereads the demo-seeded global file. Bind the follow-up to the original submitted
-job description and working resume.
-
-gates_release_type: personal
 
 ### Fix startup cleanup semantics
 

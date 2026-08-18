@@ -245,6 +245,9 @@ def generate_review(job_listing: JobListing,
     claims = verify_token(creds)
     check_authorized_user(claims)
 
+    # persist the submitted job description so follow-up questions reuse it
+    JOB_DESCRIPTION_FILE.write_text(job_listing.job_description)
+
     # get the LLM response
     prompt = create_review_prompt(job_listing.job_description)
     print(f"{datetime.datetime.now()}: calling OpenAI with prompt length", len(prompt))
