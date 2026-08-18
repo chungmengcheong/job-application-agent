@@ -16,22 +16,35 @@ the item:
 Entries marked **Confirmed** are supported by current code, tests, or build
 configuration. **Validation risk** requires a live check.
 
-## Increment 2 — Introduce the Review service and durable API 
+## Increment 2 — Introduce the Review service and durable API
 
-Goal: Replace global workflow files with a small durable domain model.
+Goal: Replace global workflow files with a durable `Review` record and a
+minimal API, without yet introducing durable users or stored resumes. Owner
+and resume are inline/denormalized for now; both grow a durable identity in
+Increment 3.5.
+
+### Add SQLite configuration for reviews
+
+Create a `reviews` table with a development-safe initialization command. Do
+not add `users` or `resumes` tables yet, and do not add foreign keys to them;
+that schema work is Increment 3.5.
+
+gates_release_type: personal
 
 ### Make Review the durable unit of work
 
-Persist owner, selected resume ID, immutable resume snapshot, immutable job
-description, answers JSON, validated result JSON, simple status, safe error, and
-timestamps. Use `processing | awaiting_answers | completed | failed`.
+Persist owner (the verified Google `sub`, not yet a durable `users` row), the
+submitted resume content, immutable job description, answers JSON, validated
+result JSON, simple status, safe error, and timestamps. Use `processing |
+awaiting_answers | completed | failed`.
 
 gates_release_type: personal
 
 ### Add a thin ReviewService and SQLite store
 
-FastAPI routes own HTTP concerns; `ReviewService` owns the two-call workflow;the existing deterministic redline
-function remains a function. 
+FastAPI routes own HTTP concerns; `ReviewService` owns the two-call workflow;
+one SQLite store module owns review persistence; the existing deterministic
+redline function remains a function.
 
 gates_release_type: personal
 
@@ -40,16 +53,14 @@ gates_release_type: personal
 Add:
 
 ```text
-GET    /api/v1/me
-GET    /api/v1/resumes
-POST   /api/v1/resumes
-GET    /api/v1/resumes/{resume_id}
-PUT    /api/v1/resumes/{resume_id}
-POST   /api/v1/resumes/{resume_id}/activate
 POST   /api/v1/reviews
 GET    /api/v1/reviews/{review_id}
 POST   /api/v1/reviews/{review_id}/answers
 ```
+
+`POST /api/v1/reviews` takes the resume content and job description directly;
+there is no `resume_id` yet. `GET /api/v1/me` and `/api/v1/resumes/*` do not
+exist until Increment 3.5 introduces users and stored resumes.
 
 Use one safe typed error envelope.
 
@@ -64,7 +75,11 @@ gates_release_type: personal
 
 Exit gate:
 
-- Both calls use the immutable resume snapshot and job description.
+- Both calls use the immutable resume content and job description captured at
+  review creation.
+- A review and its follow-up are durable and recoverable by review ID.
+- Review ownership is scoped by the verified Google `sub`, even though there is
+  no durable `users` table yet.
 - The supported live workflow has no `temp/` dependency.
 
 ## Increment 3 — Simplify the web client around the durable API
@@ -88,17 +103,19 @@ gates_release_type: personal
 
 ### Apply the minimum component split
 
-Extract only a review workspace, resume management/selection, review display,
-and redline editing around the typed client and workflow model. Split further
-only when behavior becomes independently complex.
+Extract only a review workspace, review display, and redline editing around
+the typed client and workflow model. Resume management and active-resume
+selection do not exist yet; add that component in Increment 3.5, once stored
+resumes exist. Split further only when behavior becomes independently
+complex.
 
 gates_release_type: clean-up
 
 ### Build a deliberate full-page web product
 
 Remove Chrome-only controls and fixed side-panel assumptions. Add responsive
-resume and review routes, accessible loading/error states, and restoration by
-durable review ID.
+review routes, accessible loading/error states, and restoration by durable
+review ID. Resume routes arrive in Increment 3.5 with stored resumes.
 
 gates_release_type: beta
 
@@ -116,32 +133,24 @@ Exit gate:
 - The supported web build passes tests, typecheck, lint, build, and smoke test.
 - Supported web code has no Chrome platform abstraction or behavior.
 
-## Increment 3.5 — Add authenticated one-time trial onboarding
+## Increment 3.5 — Add durable users, stored resumes, and one-time trial onboarding
 
-Goal: Let a new visitor obtain one custom review without turning the canned demo
-into a live unauthenticated provider endpoint.
+Goal: Introduce durable users and stored resumes — the identity that
+Increment 2's `Review` records referenced only loosely, by raw `sub` and
+inline resume content — and use them to let a new visitor obtain one custom
+review without turning the canned demo into a live unauthenticated provider
+endpoint.
 
-### Add SQLite configuration and migrations
+### Add SQLite configuration and migrations for users and resumes
 
-Create `users`, `resumes`, and `reviews` tables with foreign keys, transaction
-boundaries, and a development-safe initialization command.
+Add `users` and `resumes` tables with foreign keys and transaction boundaries,
+and a development-safe initialization command. Migrate existing `reviews`
+rows forward: resolve or create the matching `users` row for each recorded
+`sub`, and add a nullable `resume_id` column recording which stored resume (if
+any) a review used. Do not add repository hierarchies, separate artifact
+tables, model-call tables, or optimistic versions.
 
 gates_release_type: beta
-
-### Add SQLite store
-
-One store module owns SQLite operations; Do not add repository hierarchies, separate
-artifact tables, model-call tables, or optimistic versions.
-
-gates_release_type: personal
-
-### Support stored resumes and one active selection
-
-Allow each user to create, list, retrieve, update, and activate stored resumes.
-Exactly one stored resume may be active at a time. Do not add archive or resume
-version history yet.
-
-gates_release_type: personal
 
 ### Add internal users derived from verified identity
 
@@ -149,6 +158,16 @@ Resolve or create a user from the verified Google `sub`. Use email for display
 and allowlist audit, never as the ownership key.
 
 gates_release_type: beta
+
+### Support stored resumes and one active selection
+
+Allow each user to create, list, retrieve, update, and activate stored resumes.
+Exactly one stored resume may be active at a time. Switch `POST
+/api/v1/reviews` to take `resume_id` instead of inline resume content, and
+update the (already `/api/v1`-based) web client to select from stored resumes
+accordingly. Do not add archive or resume version history yet.
+
+gates_release_type: personal
 
 ### Collect trial inputs ephemerally
 
@@ -175,7 +194,7 @@ gates_release_type: beta
 Exit gate:
 
 - One authenticated user can manage stored resumes and select one as active.
-- A review and its follow-up are durable and recoverable by review ID.
+- Reviews created back in Increment 2 resolve to a real owning `users` row.
 - No sensitive trial input is persisted and no provider call occurs before authentication and explicit submission.
 - The resulting resume and review are owned by the newly created user.
 - The canned demo remains a separate fixture-based experience.

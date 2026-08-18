@@ -196,27 +196,15 @@ Notes on the table:
 
 ## Durable domain model
 
-### User
+The domain model grows in two stages, matching the backlog: Increment 2
+introduces only `Review`; Increment 3.5 adds `User` and `Resume` underneath it.
 
-- stable internal ID;
-- unique verified Google `sub`;
-- email for display and allowlist audit;
-- pointer to one active owned resume; and
-- timestamps.
+### Review (Increment 2)
 
-### Resume
-
-- ID and owner;
-- name and content; and
-- timestamps.
-
-A user may store multiple resumes and select one as active. Existing review
-snapshots do not change when a stored resume is updated.
-
-### Review
-
-- ID and owner;
-- selected resume ID and immutable resume snapshot;
+- ID;
+- owner — the verified Google `sub`, a plain string match, not yet a foreign
+  key to a `users` table;
+- submitted resume content, stored immutably and inline (no `resume_id` yet);
 - immutable job description;
 - optional source URL for page context;
 - answers JSON;
@@ -229,11 +217,38 @@ Keep fit, gaps, questions, answers, and tailored output in validated JSON fields
 initially. Separate artifact tables, model-call tables, retry histories, and
 optimistic versions are deferred.
 
+### User and Resume (Increment 3.5)
+
+`User`:
+
+- stable internal ID;
+- unique verified Google `sub`;
+- email for display and allowlist audit;
+- pointer to one active owned resume; and
+- timestamps.
+
+`Resume`:
+
+- ID and owner;
+- name and content; and
+- timestamps.
+
+A user may store multiple resumes and select one as active. Existing review
+snapshots do not change when a stored resume is updated. Increment 3.5 also
+migrates `Review` rows created back in Increment 2: it resolves or creates the
+`User` row for each recorded `sub`, and adds a nullable `resume_id` column to
+`Review`.
+
 ## Identity and ownership
 
-One FastAPI dependency verifies the Google ID token, enforces the invited-user
-policy, resolves the internal user from the verified `sub`, and returns a typed
-current user. Routes never accept a caller-selected `user_id`.
+Increment 2 scopes every review by the verified `sub` string directly; there
+is no durable `users` table yet, so this is a string match, not a foreign-key
+lookup.
+
+Once Increment 3.5 lands, one FastAPI dependency verifies the Google ID token,
+enforces the invited-user policy, resolves the internal user from the verified
+`sub`, and returns a typed current user. Routes never accept a caller-selected
+`user_id`.
 
 Every live resume and review query includes owner scope. Missing and
 other-user resources return the same not-found response. Canned demo paths do

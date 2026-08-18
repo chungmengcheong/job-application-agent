@@ -161,7 +161,36 @@ contracts are deferred.
 
 ## Durable `/api/v1` contract
 
-After SQLite persistence is introduced, the supported authenticated API is:
+The API grows in two stages, matching the backlog: Increment 2 introduces only
+`Review`, with no durable user or resume model yet; Increment 3.5 adds users
+and stored resumes underneath it.
+
+### Increment 2: reviews only
+
+```text
+POST   /api/v1/reviews
+GET    /api/v1/reviews/{review_id}
+POST   /api/v1/reviews/{review_id}/answers
+```
+
+`GET /api/v1/me` and `/api/v1/resumes/*` do not exist yet.
+
+### Create review (Increment 2)
+
+```json
+{
+  "resume": "...",
+  "job_description": "...",
+  "source_url": "https://example.com/job"
+}
+```
+
+There is no `resume_id`: the submitted resume content is the input, stored
+immutably on the review. The server scopes the review by the verified Google
+`sub` directly — there is no durable `users` table yet — runs Call 1, and
+returns the durable review in `awaiting_answers` or `failed` state.
+
+### Increment 3.5: add users and stored resumes
 
 ```text
 GET    /api/v1/me
@@ -171,13 +200,9 @@ POST   /api/v1/resumes
 GET    /api/v1/resumes/{resume_id}
 PUT    /api/v1/resumes/{resume_id}
 POST   /api/v1/resumes/{resume_id}/activate
-
-POST   /api/v1/reviews
-GET    /api/v1/reviews/{review_id}
-POST   /api/v1/reviews/{review_id}/answers
 ```
 
-### Create review
+`POST /api/v1/reviews` switches from inline resume content to:
 
 ```json
 {
@@ -189,7 +214,9 @@ POST   /api/v1/reviews/{review_id}/answers
 
 The server verifies that the resume belongs to the current user, stores an
 immutable resume snapshot and job description, runs Call 1, and returns the
-durable review in `awaiting_answers` or `failed` state.
+durable review in `awaiting_answers` or `failed` state. This is a coordinated
+change with the (already `/api/v1`-based, from Increment 2) web client, not a
+new compatibility facade.
 
 ### Submit answers
 
@@ -256,13 +283,19 @@ demo inputs are not part of the design.
 
 ## Authenticated one-time trial
 
-The future trial uses the normal owned `/api/v1` resources. Resume and job
-description may be collected in browser memory before login, but no persistence
-or provider call occurs until authentication and explicit submit. On submit the
-system creates or resolves the internal user, stores the resume, marks it active,
-and creates an owned review.
+The trial is part of Increment 3.5, so it uses the normal owned `/api/v1`
+resources introduced there. Resume and job description may be collected in
+browser memory before login, but no persistence or provider call occurs until
+authentication and explicit submit. On submit the system creates or resolves
+the internal user, stores the resume, marks it active, and creates an owned
+review.
 
 ## Ownership rules
+
+Increment 2 scopes every review by the verified Google `sub` directly — a
+string match, not a foreign key, since there is no durable `users` table yet.
+
+Once Increment 3.5 adds users and stored resumes:
 
 - Derive the internal user from verified token claims.
 - Never accept a client-selected `user_id`.

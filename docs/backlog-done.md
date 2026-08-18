@@ -147,7 +147,7 @@ deliberate strict xfail: it is a "planned contract" item (an unhelpful
 `/resume?command=delete` currently returns HTTP 200 with an `{"error": ...}`
 body instead of a 4xx), not a "confirmed" defect, was never a named backlog
 item, and is not part of the Increment 1 exit gate above. It fits naturally
-with Increment 2's replacement of `/resume` by typed `/api/v1/resumes`
+with Increment 3.5's replacement of `/resume` by typed `/api/v1/resumes`
 endpoints with one safe error envelope, so it is left for that increment
 rather than patched piecemeal here.
 

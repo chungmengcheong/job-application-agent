@@ -71,7 +71,7 @@ After durable users and resumes exist, add an onboarding flow in which a visitor
 may enter a resume and job description before authentication, but the system
 makes no LLM call and persists no sensitive input until the visitor authenticates
 and explicitly submits. The resulting account owns the stored resume and custom
-review. This is Increment 2.5, not part of demo isolation.
+review. This is Increment 3.5, not part of demo isolation.
 
 ## Target live workflow
 
@@ -139,40 +139,18 @@ FastAPI routes: authentication, validation, HTTP errors
 
 ## Initial durable model
 
-Use three tables initially.
+The model lands in two increments, not all at once: Increment 2 introduces
+only `Review`; Increment 3.5 adds `User` and `Resume` underneath it, once the
+one-time trial needs them.
 
-### `User`
-
-```text
-id
-google_subject       unique verified Google `sub`
-email                display and allowlist audit value
-active_resume_id     nullable pointer to one owned stored resume
-created_at
-last_seen_at
-```
-
-### `Resume`
+### `Review` (Increment 2)
 
 ```text
 id
-user_id              owner
-name
-content
-created_at
-updated_at
-```
-
-A user may store multiple resumes and select exactly one as active. Updating a
-stored resume never changes snapshots already attached to reviews.
-
-### `Review`
-
-```text
-id
-user_id              owner
-resume_id            selected stored resume
-resume_snapshot      immutable content used by both calls
+owner                verified Google `sub`, a plain string match — not yet a
+                     foreign key; there is no `users` table in Increment 2
+resume_content       submitted resume content, immutable, stored inline —
+                     not yet a `resume_id` reference
 job_description      immutable input used by both calls
 source_url           optional page context for web or a future extension
 answers_json
@@ -189,9 +167,43 @@ until independent querying or lifecycle requirements justify separate tables.
 Do not initially add artifact versions, answer versions, model-call tables,
 retry histories, or finalized-resume versions.
 
-## Minimal authenticated API
+### `User` and `Resume` (Increment 3.5)
 
 ```text
+User:
+id
+google_subject       unique verified Google `sub`
+email                display and allowlist audit value
+active_resume_id     nullable pointer to one owned stored resume
+created_at
+last_seen_at
+
+Resume:
+id
+user_id              owner
+name
+content
+created_at
+updated_at
+```
+
+A user may store multiple resumes and select exactly one as active. Updating a
+stored resume never changes snapshots already attached to reviews. Increment
+3.5 also migrates `Review` rows created back in Increment 2: it resolves or
+creates the `User` row for each recorded `sub`, and adds a nullable
+`resume_id` column to `Review` alongside the existing inline `resume_content`.
+
+## Minimal authenticated API
+
+Also staged in two increments:
+
+```text
+# Increment 2
+POST   /api/v1/reviews
+GET    /api/v1/reviews/{review_id}
+POST   /api/v1/reviews/{review_id}/answers
+
+# Increment 3.5
 GET    /api/v1/me
 
 GET    /api/v1/resumes
@@ -199,19 +211,19 @@ POST   /api/v1/resumes
 GET    /api/v1/resumes/{resume_id}
 PUT    /api/v1/resumes/{resume_id}
 POST   /api/v1/resumes/{resume_id}/activate
-
-POST   /api/v1/reviews
-GET    /api/v1/reviews/{review_id}
-POST   /api/v1/reviews/{review_id}/answers
 ```
 
-Every owned-resource operation derives the user from the verified token and
+In Increment 2, `POST /api/v1/reviews` takes the resume content inline and
+scopes the review by the verified `sub` directly — there is no internal user
+or stored resume yet. In Increment 3.5, it switches to a `resume_id` once
+every owned-resource operation derives the user from the verified token and
 scopes the query by that internal user. No request accepts a caller-selected
 `user_id`.
 
-Use one stable safe error envelope. Do not retain a compatibility facade: add
-the new API, switch the single supported web client in a coordinated increment,
-and remove the old routes after the new flow is verified.
+Use one stable safe error envelope throughout. Do not retain a compatibility
+facade: add each stage of the API, switch the single supported web client in a
+coordinated increment, and remove superseded routes after the new flow is
+verified.
 
 ## Frontend boundary
 
