@@ -1,5 +1,27 @@
-"""Pydantic contracts for the current review response and safe errors."""
+"""Pydantic contracts for the current review request and response shapes."""
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class Url(BaseModel):
+    """A page URL, optionally requesting the canned demo response."""
+
+    url: str  # URL of the page requesting the job description
+    demo: bool = False   # if true, return static demo response
+
+
+class JobListing(BaseModel):
+    """A job description to review, optionally requesting the canned demo response."""
+
+    job_description: str  # Job description to be reviewed
+    url: str  # URL of calling page for tracking purposes
+    demo: bool = False   # if true, return static demo response
+
+
+class QuestionAnswers(BaseModel):
+    """Candidate answers to prior follow-up questions, keyed by question text."""
+
+    qa_pairs: list[dict[str, str]]  # list of question-answer pairs
+    demo: bool = False   # if true, return static demo response
 
 
 class Fit(BaseModel):

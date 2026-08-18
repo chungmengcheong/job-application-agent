@@ -57,9 +57,11 @@ def test_debug_is_disabled_when_environment_is_production() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_debug_defaults_to_enabled_outside_production() -> None:
+def test_debug_is_enabled_when_environment_is_not_production() -> None:
+    # Set explicitly rather than relying on absence: backend.api unconditionally
+    # loads the developer's real .env file, which may itself set ENVIRONMENT.
     environment = os.environ.copy()
-    environment.pop("ENVIRONMENT", None)
+    environment["ENVIRONMENT"] = "development"
 
     result = subprocess.run(
         [

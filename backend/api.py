@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 # from openai import OpenAI
 from groq import Groq
 from langsmith import traceable, Client
@@ -14,10 +14,10 @@ import os, shutil, datetime
 import httpx
 import json
 from dotenv import load_dotenv
-from .redline import redline_diff
-from .schemas import ReviewResult
-from .security import check_authorized_user, verify_token, security
-from .security import router as oauth_router
+from backend.redline import redline_diff
+from backend.schemas import JobListing, QuestionAnswers, ReviewResult, Url
+from backend.security import check_authorized_user, verify_token, security
+from backend.security import router as oauth_router
 
 # Load environment variables from .env file
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -204,12 +204,6 @@ def show_heartbeat():
     return {"message": "Hello World"}
 
 
-class Url(BaseModel):
-    """Define the shape of data expected by /jobdescription."""
-    url: str  # URL of the page requesting the job description
-    demo: bool = False   # if true, return static demo response
-
-
 @app.post("/jobdescription")
 def get_job_description_from_url(url:Url):
     """Fetch job description from URL."""
@@ -222,13 +216,6 @@ def get_job_description_from_url(url:Url):
     # For now, always return the demo JD when not implemented.
     job_description = JOB_DESCRIPTION_FILE.read_text()
     return {"job_description": job_description}
-
-
-class JobListing(BaseModel):
-    """Define the shape of data expected by /review."""
-    job_description: str  # Job description to be reviewed
-    url: str  # URL of calling page for tracking purposes
-    demo: bool = False   # if true, return static demo response
 
 
 @app.post("/review", response_model=ReviewResult)
@@ -292,12 +279,6 @@ def generate_review(job_listing: JobListing,
     response["Tailored_Resume"] = create_resume_diff(baseline_resume, revised_resume)
 
     return response
-
-
-class QuestionAnswers(BaseModel):
-    """Define the shape of data expected by /questions_answers."""
-    qa_pairs: list[dict[str, str]]  # list of question-answer pairs
-    demo: bool = False   # if true, return static demo response
 
 
 @app.post("/questions", response_model=ReviewResult)
