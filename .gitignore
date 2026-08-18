@@ -4,6 +4,7 @@
 # runtime / private data
 temp/
 user/
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

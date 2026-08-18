@@ -55,6 +55,8 @@ interface ReviewData {
   }>
   // Present only after Call 1 (POST /review); absent after Call 2.
   Questions?: string[]
+  // Present only in live (non-demo) mode; the durable /api/v1 review id.
+  reviewId?: string
 }
 
 export default function Component() {
@@ -67,6 +69,9 @@ export default function Component() {
   const [error, setError] = useState<string | null>(null)
   const [initError, setInitError] = useState<string | null>(null)
   const [review, setReview] = useState<ReviewData | null>(null)
+  // The durable Review id from /api/v1/reviews (live mode only), needed to
+  // submit follow-up answers to POST /api/v1/reviews/{reviewId}/answers.
+  const [reviewId, setReviewId] = useState<string | null>(null)
   const [tailoredMarkdown, setTailoredMarkdown] = useState("")
   const [showRedlines, setShowRedlines] = useState(true)
   const [questionAnswers, setQuestionAnswers] = useState<Record<number, string>>({})
@@ -99,6 +104,7 @@ export default function Component() {
       // Clear any loaded resume/tailored content so the next view reflects the new mode
       setTailoredMarkdown("");
       setInitialResume("");
+      setReviewId(null);
       resumeLoadedRef.current = false;
 
       // When turning demo ON, allow viewing (no auth needed)
@@ -434,6 +440,9 @@ useEffect(() => {
 
         console.log("[v0] Setting review state...")
         setReview(result)
+        if (result.reviewId) {
+          setReviewId(result.reviewId)
+        }
 
         setTimeout(() => {
           console.log("[v0] Review state verification - review exists:", !!result)
@@ -469,6 +478,7 @@ useEffect(() => {
     setIsLoading(true)
     setError(null)
     setReview(null)
+    setReviewId(null)
 
     try {
       console.log("[v0] Sending review request with demo state:", demoState)
@@ -482,6 +492,7 @@ useEffect(() => {
           jobDescription: jobDescription.trim(),
           url: activeTabUrl,
           demo: demoState,
+          resume: initialResume,
         });
         await handleApiResponse(Promise.resolve(response), "call1");
       } catch (err: any) {
@@ -515,7 +526,8 @@ useEffect(() => {
       const result = await handleApiResponse(
         postQuestions({
           qa_pairs,
-          demo: demoState
+          demo: demoState,
+          reviewId: reviewId ?? undefined,
         }),
         "call2"
       );

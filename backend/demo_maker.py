@@ -1,7 +1,7 @@
 """Utility program to create files for demo API response and input to the LLM."""
 import json
 from pathlib import Path
-from backend.api import create_resume_diff
+from backend.redline import redline_diff as create_resume_diff
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 USER_DIR = BASE_DIR / "user"

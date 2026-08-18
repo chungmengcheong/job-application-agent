@@ -165,7 +165,7 @@ The API grows in two stages, matching the backlog: Increment 2 introduces only
 `Review`, with no durable user or resume model yet; Increment 3.5 adds users
 and stored resumes underneath it.
 
-### Increment 2: reviews only
+### Increment 2: reviews only — implemented
 
 ```text
 POST   /api/v1/reviews
@@ -173,7 +173,19 @@ GET    /api/v1/reviews/{review_id}
 POST   /api/v1/reviews/{review_id}/answers
 ```
 
-`GET /api/v1/me` and `/api/v1/resumes/*` do not exist yet.
+`GET /api/v1/me` and `/api/v1/resumes/*` do not exist yet. These three routes
+are mounted as a dedicated FastAPI sub-app (`backend/api_v1.py`) at
+`/api/v1`, so the error envelope below applies only here — the pre-existing
+`/review`, `/questions`, `/resume`, and `/jobdescription` routes keep their
+original `{"detail": "..."}` shape and now serve only the permanent canned
+demo (plus, for `/resume`, an authenticated getter for the one operator
+resume's text). They are not a compatibility facade for the live workflow:
+no code path in them reaches the model or the reviews store.
+
+The "additional candidate info" file input the pre-Increment-2 live prompts
+read from `user/additional_candidate_info.txt` was dropped rather than
+carried forward — the request body below has no field for it, and
+`ReviewService` does not read that file.
 
 ### Create review (Increment 2)
 
@@ -189,6 +201,34 @@ There is no `resume_id`: the submitted resume content is the input, stored
 immutably on the review. The server scopes the review by the verified Google
 `sub` directly — there is no durable `users` table yet — runs Call 1, and
 returns the durable review in `awaiting_answers` or `failed` state.
+
+Every `/api/v1` review route (create, get, submit answers) returns the same
+representation on success:
+
+```json
+{
+  "id": "rev_...",
+  "status": "awaiting_answers",
+  "result": { "Fit": { "score": 0, "rationale": "..." }, "Gap_Map": [], "Questions": [] },
+  "safe_error_code": null,
+  "created_at": "...",
+  "updated_at": "...",
+  "completed_at": null
+}
+```
+
+`result` holds whichever validated shape the review's current stage
+produced — Call 1's `Fit`/`Gap_Map`/`Questions`, or Call 2's revised
+`Fit`/`Gap_Map`/`Tailored_Resume` (the redlined text, not the raw tailored
+resume) — and is not re-validated at this layer, since it was already
+validated once before storage.
+
+If Call 1 or Call 2 fails, the review row is still durably written first
+(`processing` → `failed` with a `safe_error_code`), but the request itself
+returns an HTTP error in the safe envelope below (matching the failure-class
+precedent the live routes already had), not a 201/200 with a `failed` body.
+`GET /api/v1/reviews/{review_id}` is the recovery path if a client loses that
+response.
 
 ### Increment 3.5: add users and stored resumes
 
@@ -267,6 +307,20 @@ HTTP status communicates the failure class. Provider exceptions, prompts,
 tokens, resumes, job descriptions, and answers never appear in client errors or
 logs.
 
+Codes implemented as of Increment 2 (`backend/errors.py`):
+
+| Code | HTTP status | retryable | Where |
+|---|---|---|---|
+| `UNAUTHENTICATED` | 401 | false | missing/invalid token (`verify_token`) |
+| `FORBIDDEN` | 403 | false | not on the allowlist (`check_authorized_user`) |
+| `NOT_FOUND` | 404 | false | missing or other-owner review |
+| `VALIDATION_ERROR` | 422 | false | request body fails schema validation |
+| `REVIEW_NOT_AWAITING_ANSWERS` | 409 | false | answers submitted outside `awaiting_answers` |
+| `MODEL_CALL_FAILED` | 502 | true | the provider call itself raised |
+| `MODEL_INVALID_OUTPUT` | 502 | true | invalid JSON or schema mismatch from the provider |
+
+Any other `HTTPException` falls back to `INTERNAL`.
+
 ## Canned demo API
 
 The canned demo remains fixture-based. It may use dedicated demo routes or a
@@ -322,6 +376,7 @@ Current or planned environment configuration includes:
 | `ALLOWED_EMAILS` | invited email allowlist |
 | `ALLOWED_DOMAINS` | invited domain allowlist |
 | `HTTPS_PROXY` / `HTTP_PROXY` | production outbound proxy when required |
+| `REVIEWS_DB_PATH` | path to the reviews SQLite file; defaults to `data/reviews.db` |
 
 The LLM client (`backend/llm_client.py`) is a thin wrapper around the generic
 `openai` SDK pointed at a configurable `base_url`, not a Groq-specific client.

@@ -39,30 +39,38 @@ Chrome extension (frozen)              Static web app
                      JSON over HTTPS
                             |
                   FastAPI / PythonAnywhere
-                 auth + route orchestration
-                    |        |        |
-                    v        v        v
-             global files  provider  redline.py
-             user/ temp/    client    deterministic diff
+              /api/v1: auth + validation + safe errors
+                            |
+                     ReviewService
+                    /        |        \
+                   v         v         v
+          SQLite reviews  LLMClient  redline.py
+           (data/reviews.db)          deterministic diff
 ```
 
-The current live workflow runs two Groq calls, per Increment 1.5: `POST
-/review` returns fit, gaps, and questions (Call 1); after the user answers
-questions, `POST /questions` returns revised fit, revised gaps, and the
-tailored resume (Call 2). Call 1 does not generate a tailored resume, and Call
-2 does not return another question set.
+The live workflow runs two Groq calls against a durable `Review` record, per
+Increment 2: `POST /api/v1/reviews` creates the row and runs Call 1 (fit,
+gaps, questions); `POST /api/v1/reviews/{review_id}/answers` runs Call 2
+(revised fit, revised gaps, tailored resume) using the same resume/job
+description captured at creation. Call 1 does not generate a tailored resume,
+and Call 2 does not return another question set. The pre-Increment-2 routes
+(`/review`, `/questions`, `/resume`, `/jobdescription`) remain, but now serve
+only the permanent canned demo and a plain resume-text getter — no code path
+in them reaches the model or the reviews store.
 
 Important current constraints:
 
-- `user/` and `temp/` contain one process-global workflow state.
-- `/review` persists the submitted job description so `/questions` reuses the
-  same input rather than a demo-seeded global one.
-- startup cleanup can leave stale later files when an earlier file is missing.
+- `user/resume.txt` remains the one operator resume until Increment 3.5's
+  stored resumes; the live client fetches its text via `GET /resume` and
+  submits it inline to `POST /api/v1/reviews`.
 - model output is used before complete schema validation.
-- the canned demo uses checked-in fixtures but some demo paths can mutate the
-  same working files as live mode.
+- the canned demo uses checked-in fixtures, fully isolated from the live
+  reviews store and from `user/resume.txt`.
 - synchronous provider requests can occupy the browser for up to 150 seconds
   per call, twice per full review-and-tailor cycle.
+- the frontend cutover (`BrowserExtension/lib/api.ts`) is intentionally ad
+  hoc — it unwraps the `/api/v1` Review envelope back into the flat shape the
+  panel already expected, rather than the typed client Increment 3 adds.
 
 ## Canned demo boundary
 
@@ -139,6 +147,13 @@ Boundaries:
 Do not add a repository hierarchy, multi-provider framework, separate redline
 service, or compatibility facade without a demonstrated need.
 
+As of Increment 2, the backend half of this diagram is implemented
+(`backend/api_v1.py`'s FastAPI routes, `backend/review_service.py`'s
+`ReviewService`, `backend/review_store.py`'s `ReviewStore`, the unchanged
+`LLMClient`/`redline_diff`). The web application half — a typed API client
+and explicit workflow state, replacing `lib/api.ts`'s ad hoc `/api/v1`
+envelope unwrapping — is Increment 3.
+
 ## LLM client configuration notes
 
 Live-validated 2026-08-18 against Groq's OpenAI-compatible endpoint through
@@ -199,7 +214,10 @@ Notes on the table:
 The domain model grows in two stages, matching the backlog: Increment 2
 introduces only `Review`; Increment 3.5 adds `User` and `Resume` underneath it.
 
-### Review (Increment 2)
+### Review (Increment 2) — implemented
+
+`backend/review_store.py`'s `reviews` table (`backend/db.py`), matching this
+exactly:
 
 - ID;
 - owner — the verified Google `sub`, a plain string match, not yet a foreign
@@ -262,7 +280,7 @@ not resolve through the live store.
 | Web | static Next.js export | callback, CORS, responsive workflow |
 | Extension | frozen shared-code legacy | no longer a current release gate; reassess browser-native jobs after the web workflow is proven |
 | Provider | Groq migration in working tree | model, proxy, timeouts, safe errors |
-| Persistence | global server files | SQLite durability, backup, locking |
+| Persistence | SQLite `reviews` table (`data/reviews.db`) | production durability, backup, locking |
 | Tracing | LangSmith development integration | production disabled |
 
 Use SQLite first. Move to managed Postgres only if production filesystem,

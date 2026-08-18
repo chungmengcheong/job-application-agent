@@ -262,3 +262,140 @@ shapes: `demo/API_response_review_demo.json` has no `Tailored_Resume`,
   answers and returns revised fit, revised gaps, and a tailored resume.
 - The canned demo remains deterministic and makes no LLM call.
 
+## Increment 2 — Introduce the Review service and durable API
+
+Goal: Replace global workflow files with a durable `Review` record and a
+minimal API, without yet introducing durable users or stored resumes. Owner
+and resume are inline/denormalized for now; both grow a durable identity in
+Increment 3.5.
+
+Refined by explicit user decision (2026-08-18): drop the "additional
+candidate info" file input (`user/additional_candidate_info.txt`) rather than
+keep reading it server-side. The documented `POST /api/v1/reviews` request
+body (`resume`, `job_description`, `source_url`) has no field for it, and
+Increment 2 does not reintroduce a home for it; `ReviewService` reads only the
+resume content and job description captured on the review itself.
+
+### Add SQLite configuration for reviews
+
+Create a `reviews` table with a development-safe initialization command. Do
+not add `users` or `resumes` tables yet, and do not add foreign keys to them;
+that schema work is Increment 3.5.
+
+gates_release_type: personal
+
+Landed: `backend/db.py` defines the `reviews` table (no `users`/`resumes`,
+no foreign keys) and `init_db()`, which only ever runs `CREATE ... IF NOT
+EXISTS` — safe to call on every process startup, never destroys data. The
+path defaults to `data/reviews.db` (now gitignored) and is overridable via
+`REVIEWS_DB_PATH`. `python -m backend.db` runs it standalone as the
+development-safe initialization command. `backend/api.py`'s `lifespan` calls
+it on startup in place of the old temp-file copy/cleanup it used to do.
+
+### Make Review the durable unit of work
+
+Persist owner (the verified Google `sub`, not yet a durable `users` row), the
+submitted resume content, immutable job description, answers JSON, validated
+result JSON, simple status, safe error, and timestamps. Use `processing |
+awaiting_answers | completed | failed`.
+
+gates_release_type: personal
+
+Landed: `backend/review_store.py`'s `ReviewRecord`/`ReviewStore` persist
+exactly this shape. `result_json`/`answers_json` transitions use `COALESCE`
+against the existing column value, so a Call 2 failure records
+`status="failed"` and a `safe_error_code` without erasing Call 1's already-
+stored fit/gaps. Added `tests/test_review_store.py`.
+
+### Add a thin ReviewService and SQLite store
+
+FastAPI routes own HTTP concerns; `ReviewService` owns the two-call workflow;
+one SQLite store module owns review persistence; the existing deterministic
+redline function remains a function.
+
+gates_release_type: personal
+
+Landed: `backend/review_service.py`'s `ReviewService` builds each call's
+prompt from the review's own stored `resume_content`/`job_description` (never
+global files), validates provider output against the existing
+`AnalysisResult`/`ReviewResult` schemas before persisting it, generates the
+redline via the unchanged `redline_diff` only after Call 2's tailored resume
+validates, and maps provider/validation failures to `backend/errors.py`'s
+`ApiError` (`MODEL_CALL_FAILED` / `MODEL_INVALID_OUTPUT`, both 502,
+retryable). Added `tests/test_review_service.py`, including assertions that
+neither prompt contains an `Additional_Info` key.
+
+### Implement the minimal JSON API
+
+Add:
+
+```text
+POST   /api/v1/reviews
+GET    /api/v1/reviews/{review_id}
+POST   /api/v1/reviews/{review_id}/answers
+```
+
+`POST /api/v1/reviews` takes the resume content and job description directly;
+there is no `resume_id` yet. `GET /api/v1/me` and `/api/v1/resumes/*` do not
+exist until Increment 3.5 introduces users and stored resumes.
+
+Use one safe typed error envelope.
+
+gates_release_type: personal
+
+Landed: `backend/api_v1.py` mounts a dedicated `FastAPI` sub-app at
+`/api/v1` (`app.mount("/api/v1", api_v1_app)` in `backend/api.py`) with all
+three routes, each authenticating via the existing `verify_token`/
+`check_authorized_user` and scoping by the verified `sub`. `backend/errors.py`
+registers the safe envelope (`{"error": {"code", "message", "request_id",
+"retryable"}}`) only on this sub-app, so the legacy/demo routes' error shape
+is untouched. A review that fails Call 1 or Call 2 returns an HTTP error
+(404/409/422/502, matching today's failure-class precedent) rather than a 201
+with a `failed` body; the row is still durably written first, so `GET
+/api/v1/reviews/{review_id}` remains the recovery path if a client loses the
+response. Missing and other-owner reviews return the same `NOT_FOUND` 404.
+Added `tests/test_api_v1.py`, `tests/test_db.py`.
+
+### Cut over without a compatibility facade
+
+Switch the single supported web client to `/api/v1` in a coordinated change.
+After verification, remove the old live endpoints and global workflow files.
+
+gates_release_type: personal
+
+Landed: `backend/api.py` dropped every `temp/`-scoped constant, the
+lifespan temp-file copy/cleanup, and the live branches of `/review` and
+`/questions` (auth, prompt building, LLM call). Those two routes, plus
+`/resume` and `/jobdescription`, now serve only the permanent canned demo (and,
+for `/resume`, a plain authenticated getter for the one operator resume's
+text) — they are not a compatibility facade for the live workflow, since no
+code path in them reaches an LLM or the reviews store. `BrowserExtension/lib/api.ts`'s
+`postReview`/`postQuestions` branch on `demo`: the demo path is byte-for-byte
+unchanged (still `/review`/`/questions`), and the live path now posts to
+`/api/v1/reviews` / `/api/v1/reviews/{id}/answers` and unwraps the `{id,
+status, result}` envelope back into the flat shape `extension-panel.tsx`
+already expected, plus a new `reviewId`. This is intentionally the smallest
+frontend change that makes the live path correct; the typed client that
+formally replaces this ad hoc unwrapping is Increment 3.
+
+Exit gate:
+
+- Both calls use the immutable resume content and job description captured at
+  review creation.
+- A review and its follow-up are durable and recoverable by review ID.
+- Review ownership is scoped by the verified Google `sub`, even though there is
+  no durable `users` table yet.
+- The supported live workflow has no `temp/` dependency.
+
+## Increment 2 exit gate — met
+
+- `create_review`/`submit_answers` (`ReviewService`) always read the
+  `resume_content`/`job_description` captured on the `Review` row at
+  creation, for both calls.
+- `GET /api/v1/reviews/{review_id}` recovers a review and its answers by ID
+  after the fact (`tests/test_api_v1.py`).
+- Every `/api/v1` route scopes by `claims["sub"]`; missing and other-owner
+  reviews both return `NOT_FOUND` 404.
+- `backend/api.py` no longer references `temp/`; `lifespan` only calls
+  `init_db()`.
+

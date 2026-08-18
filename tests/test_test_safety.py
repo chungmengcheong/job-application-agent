@@ -8,12 +8,12 @@ import sys
 
 import pytest
 
-from backend import api
+from backend import api, api_v1
 
 
 def test_default_test_harness_blocks_paid_llm_calls() -> None:
     with pytest.raises(AssertionError, match="paid LLM calls are not allowed"):
-        api.prompt_llm("This must never reach Groq.")
+        api_v1.review_service._llm_client.complete("This must never reach Groq.")
 
 
 def test_explicit_production_tracing_setting_is_not_overridden() -> None:

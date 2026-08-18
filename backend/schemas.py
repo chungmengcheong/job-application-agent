@@ -62,3 +62,47 @@ class SafeError(BaseModel):
     """The stable error shape returned to clients; never includes provider detail."""
 
     detail: str
+
+
+class CreateReviewRequest(BaseModel):
+    """Body for `POST /api/v1/reviews`. No `resume_id` yet; the resume
+    content is submitted inline and stored immutably (Increment 2)."""
+
+    resume: str
+    job_description: str
+    source_url: str | None = None
+
+
+class AnswersRequest(BaseModel):
+    """Body for `POST /api/v1/reviews/{review_id}/answers`."""
+
+    qa_pairs: list[dict[str, str]]
+
+
+class ReviewOut(BaseModel):
+    """The durable `Review` representation returned by every `/api/v1`
+    review route. `result` holds whichever validated shape the review's
+    current stage produced (Call 1's fit/gaps/questions, or Call 2's revised
+    fit/gaps/tailored resume) and is not re-validated at this layer, since it
+    was already validated once before storage."""
+
+    id: str
+    status: str
+    result: dict | None = None
+    safe_error_code: str | None = None
+    created_at: str
+    updated_at: str
+    completed_at: str | None = None
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    request_id: str
+    retryable: bool
+
+
+class ErrorEnvelope(BaseModel):
+    """The one stable `/api/v1` error shape; see backend/errors.py."""
+
+    error: ErrorDetail

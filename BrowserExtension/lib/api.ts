@@ -42,6 +42,9 @@ interface AuthToken {
 // ---- Lightweight API response types ----
 // postReview (Call 1) returns Fit/Gap_Map/Questions, no Tailored_Resume.
 // postQuestions (Call 2) returns Fit/Gap_Map/Tailored_Resume, no Questions.
+// In live (non-demo) mode these are unwrapped here from the durable
+// `/api/v1` Review envelope ({id, status, result: {...}}); reviewId is the
+// durable review id, needed by the follow-up postQuestions call.
 export interface ReviewResponse {
   Tailored_Resume?: string;
   Fit?: { score?: number; rationale?: string };
@@ -53,6 +56,15 @@ export interface ReviewResponse {
   }>;
   Questions?: string[];
   error?: string;
+  reviewId?: string;
+}
+
+// The durable Review envelope returned by /api/v1/reviews* routes.
+interface ReviewEnvelope {
+  id: string;
+  status: string;
+  result: Record<string, unknown> | null;
+  safe_error_code: string | null;
 }
 
 export interface ResumeResponse {
@@ -361,6 +373,9 @@ async function handleErrorResponse(res: Response): Promise<never> {
       const body = await res.json();
       if (typeof body?.detail === "string") {
         message = body.detail;
+      } else if (typeof body?.error?.message === "string") {
+        // /api/v1's safe error envelope: {"error": {"code","message",...}}
+        message = body.error.message;
       } else if (typeof body?.message === "string") {
         message = body.message;
       } else if (body != null) {
@@ -445,53 +460,85 @@ async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}) {
   throw lastError;
 }
 
+const RETRYABLE_OPTS = {
+  retries: 0,
+  delayMs: 2000,
+  shouldRetry: (e: unknown) => {
+    const msg = String((e as Error)?.message || "");
+    return !(msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("authentication"));
+  },
+};
+
+function fromReviewEnvelope(body: ReviewEnvelope): ReviewResponse {
+  return { ...(body.result || {}), reviewId: body.id } as ReviewResponse;
+}
+
 export async function postReview({
   jobDescription,
   url,
   demo,
-}: { jobDescription: string; url: string; demo?: boolean }): Promise<ReviewResponse> {
+  resume,
+}: { jobDescription: string; url: string; demo?: boolean; resume?: string }): Promise<ReviewResponse> {
+  if (demo) {
+    return withRetry(
+      () => apiFetch<ReviewResponse>("/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_description: jobDescription,
+          url,
+          demo: true,
+        }),
+      }, { auth: true, timeoutMs: 150000, parse: "json" }),
+      RETRYABLE_OPTS
+    );
+  }
+
   return withRetry(
-    () => apiFetch<ReviewResponse>("/review", {
+    () => apiFetch<ReviewEnvelope>("/api/v1/reviews", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        resume: resume || "",
         job_description: jobDescription,
-        url,
-        demo: !!demo,
+        source_url: url,
       }),
-    }, { auth: true, timeoutMs: 150000, parse: "json" }),
-    {
-      retries: 0,
-      delayMs: 2000,
-      shouldRetry: (e) => {
-        const msg = String((e as Error)?.message || "");
-        return !(msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("authentication"));
-      }
-    }
+    }, { auth: true, timeoutMs: 150000, parse: "json" }).then(fromReviewEnvelope),
+    RETRYABLE_OPTS
   );
 }
 
 export async function postQuestions({
   qa_pairs,
   demo,
+  reviewId,
 }: {
   qa_pairs: Array<{ question: string; answer: string }>;
   demo?: boolean;
+  reviewId?: string;
 }): Promise<ReviewResponse> {
+  if (demo) {
+    return withRetry(
+      () => apiFetch<ReviewResponse>("/questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qa_pairs, demo: true }),
+      }, { auth: true, timeoutMs: 150000, parse: "json" }),
+      RETRYABLE_OPTS
+    );
+  }
+
+  if (!reviewId) {
+    throw new Error("Missing review id; submit the job description again.");
+  }
+
   return withRetry(
-    () => apiFetch<ReviewResponse>("/questions", {
+    () => apiFetch<ReviewEnvelope>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/answers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ qa_pairs, demo: !!demo }),
-    }, { auth: true, timeoutMs: 150000, parse: "json" }),
-    {
-      retries: 0,
-      delayMs: 2000,
-      shouldRetry: (e) => {
-        const msg = String((e as Error)?.message || "");
-        return !(msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("authentication"));
-      }
-    }
+      body: JSON.stringify({ qa_pairs }),
+    }, { auth: true, timeoutMs: 150000, parse: "json" }).then(fromReviewEnvelope),
+    RETRYABLE_OPTS
   );
 }
 

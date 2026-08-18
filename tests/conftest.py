@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backend import api  # noqa: E402
+# Point every ReviewStore built during this test session at a throwaway
+# database, not the real repo's data/reviews.db. Must happen before backend.api
+# (which imports backend.api_v1, which constructs a module-level ReviewStore)
+# is ever imported.
+_TEST_DB_DIR = tempfile.mkdtemp(prefix="reviews-test-db-")
+os.environ["REVIEWS_DB_PATH"] = str(Path(_TEST_DB_DIR) / "reviews.db")
+
+from backend import api, api_v1  # noqa: E402
 
 
 VALID_CLAIMS = {
@@ -27,38 +35,36 @@ VALID_CLAIMS = {
 
 @pytest.fixture(autouse=True)
 def block_paid_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make accidental live provider calls fail in the normal unit suite."""
+    """Make an accidental live provider call fail in the normal unit suite.
 
-    def blocked_prompt_llm(prompt: str) -> str:
+    Only guards the one real `LLMClient` instance the app wires up by
+    default (`backend.api_v1.review_service`'s). Tests that need a fake
+    provider response replace `api_v1.review_service` outright (see
+    tests/test_api_v1.py), which makes this guard moot for them; tests of
+    `LLMClient` itself (tests/test_llm_client.py) construct their own
+    instances against an injected fake SDK client and never go through here.
+    """
+
+    def blocked_complete(prompt: str) -> str:
         raise AssertionError(
-            "Unit tests must mock prompt_llm; paid LLM calls are not allowed."
+            "Unit tests must inject a fake LLMClient; paid LLM calls are not allowed."
         )
 
-    monkeypatch.setattr(api, "prompt_llm", blocked_prompt_llm)
+    monkeypatch.setattr(api_v1.review_service._llm_client, "complete", blocked_complete)
 
 
 @pytest.fixture
 def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
-    """Redirect all mutable backend files to one test-owned directory."""
-    temp_dir = tmp_path / "temp"
+    """Redirect the demo fixtures and the one operator resume file to one
+    test-owned directory. The live workflow has no `temp/` dependency
+    anymore, so there is nothing else left to isolate here."""
     user_dir = tmp_path / "user"
     demo_dir = tmp_path / "demo"
-    prompt_dir = tmp_path / "prompts"
-    for directory in (temp_dir, user_dir, demo_dir, prompt_dir):
+    for directory in (user_dir, demo_dir):
         directory.mkdir()
 
     paths = {
-        "temp_dir": temp_dir,
         "resume_file": user_dir / "resume.txt",
-        "additional_experience_file": user_dir / "additional_candidate_info.txt",
-        "call1_prompt_file": prompt_dir / "prompt_call1_analysis_GOLD.txt",
-        "call2_prompt_file": prompt_dir / "prompt_call2_tailor_GOLD.txt",
-        "resume_baseline_file": temp_dir / "resume_baseline.txt",
-        "resume_revised_file": temp_dir / "resume_revised.txt",
-        "user_response_file": temp_dir / "user_response.json",
-        "output_prior_file": temp_dir / "LLM_response_prior.json",
-        "output_current_file": temp_dir / "LLM_response_current.json",
-        "job_description_file": temp_dir / "job_description.txt",
         "resume_demo_file": demo_dir / "resume_demo.txt",
         "job_description_demo_file": demo_dir / "job_description_demo.txt",
         "review_demo_file": demo_dir / "API_response_review_demo.json",
@@ -66,11 +72,6 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     }
 
     paths["resume_file"].write_text("LIVE RESUME", encoding="utf-8")
-    paths["additional_experience_file"].write_text(
-        "ADDITIONAL EXPERIENCE", encoding="utf-8"
-    )
-    paths["call1_prompt_file"].write_text("PROMPT\n{{INPUT}}\nEND", encoding="utf-8")
-    paths["call2_prompt_file"].write_text("PROMPT\n{{INPUT}}\nEND", encoding="utf-8")
     paths["resume_demo_file"].write_text("DEMO RESUME", encoding="utf-8")
     paths["job_description_demo_file"].write_text(
         "DEMO JOB DESCRIPTION", encoding="utf-8"
@@ -84,23 +85,14 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
             "Gap handling": "Retain evidence.",
         }
     ]
-    live_response_call1 = {
-        "Fit": {"score": 6, "rationale": "Solid experience; some gaps."},
+    demo_response_call1 = {
+        "Fit": {"score": 7, "rationale": "Demo rationale."},
         "Gap_Map": gap_map,
         "Questions": ["What else should I know about you and this job?"],
     }
-    live_response_call2 = {
-        "Fit": {"score": 8, "rationale": "Strong relevant experience."},
-        "Gap_Map": gap_map,
-        "Tailored_Resume": "LIVE RESUME improved",
-    }
-    demo_response_call1 = {
-        **live_response_call1,
-        "Fit": {"score": 7, "rationale": "Demo rationale."},
-    }
     demo_response_call2 = {
-        **live_response_call2,
         "Fit": {"score": 8, "rationale": "Updated demo rationale."},
+        "Gap_Map": gap_map,
         "Tailored_Resume": "DEMO RESUME improved",
     }
     paths["review_demo_file"].write_text(
@@ -109,24 +101,8 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     paths["review_add_info_demo_file"].write_text(
         json.dumps(demo_response_call2), encoding="utf-8"
     )
-    paths["llm_response_call1"] = live_response_call1
-    paths["llm_response_call2"] = live_response_call2
 
-    monkeypatch.setattr(api, "TEMP_DIR", temp_dir)
     monkeypatch.setattr(api, "RESUME_FILE", paths["resume_file"])
-    monkeypatch.setattr(
-        api, "ADDITIONAL_EXPERIENCE_FILE", paths["additional_experience_file"]
-    )
-    monkeypatch.setattr(api, "PROMPT_CALL1_ANALYSIS_FILE", paths["call1_prompt_file"])
-    monkeypatch.setattr(api, "PROMPT_CALL2_TAILOR_FILE", paths["call2_prompt_file"])
-    monkeypatch.setattr(api, "RESUME_BASELINE_FILE", paths["resume_baseline_file"])
-    monkeypatch.setattr(api, "RESUME_REVISED_FILE", paths["resume_revised_file"])
-    monkeypatch.setattr(api, "USER_RESPONSE_FILE", paths["user_response_file"])
-    monkeypatch.setattr(api, "OUTPUT_FROM_LLM_PRIOR_FILE", paths["output_prior_file"])
-    monkeypatch.setattr(
-        api, "OUTPUT_FROM_LLM_CURRENT_FILE", paths["output_current_file"]
-    )
-    monkeypatch.setattr(api, "JOB_DESCRIPTION_FILE", paths["job_description_file"])
     monkeypatch.setattr(api, "RESUME_DEMO_FILE", paths["resume_demo_file"])
     monkeypatch.setattr(
         api, "JOB_DESCRIPTION_DEMO_FILE", paths["job_description_demo_file"]
