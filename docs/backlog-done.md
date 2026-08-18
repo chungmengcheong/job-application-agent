@@ -65,3 +65,18 @@ Landed: `check_authorized_user` now checks for a present, verified email first
 and raises 401 before any allowlist check runs. Fixed
 `tests/test_security.py::test_authorization_rejects_allowlisted_but_unverified_email`
 (previously a strict xfail).
+
+### Add the minimum typed review schemas
+
+Add Pydantic contracts for the current fit, gaps, questions, tailored resume,
+and safe error responses. Do not introduce schemas for future streaming events,
+artifact versions, or a three-stage workflow.
+
+gates_release_type: personal
+
+Landed: `backend/schemas.py` adds `Fit`, `GapItem`, `ReviewResult` (the shared
+fit/gaps/questions/tailored-resume shape), and `SafeError`. Not yet wired into
+routes — that lands with the next two items (validating LLM output before
+mutating state, and aligning demo/live responses through the same schema).
+Added `tests/test_schemas.py`, which validates both checked-in demo fixtures
+against `ReviewResult` and asserts round-trip and rejection behavior.

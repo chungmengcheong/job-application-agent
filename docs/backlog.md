@@ -21,14 +21,6 @@ configuration. **Validation risk** requires a live check.
 Goal: Make the existing personal workflow trustworthy before restructuring it.
 Preserve the current LLM workflow in this increment.
 
-### Add the minimum typed review schemas
-
-Add Pydantic contracts for the current fit, gaps, questions, tailored resume,
-and safe error responses. Do not introduce schemas for future streaming events,
-artifact versions, or a three-stage workflow.
-
-gates_release_type: personal
-
 ### Validate LLM output before changing state
 
 **Confirmed.** Parse and validate the complete provider result before rotating
