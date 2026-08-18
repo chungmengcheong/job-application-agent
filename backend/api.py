@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 # from openai import OpenAI
 from groq import Groq
 from langsmith import traceable, Client
@@ -15,6 +15,7 @@ import httpx
 import json
 from dotenv import load_dotenv
 from .redline import redline_diff
+from .schemas import ReviewResult
 from .security import check_authorized_user, verify_token, security
 from .security import router as oauth_router
 
@@ -267,16 +268,26 @@ def generate_review(job_listing: JobListing,
             detail="generate_review: OpenAI call failed. Please try again."
         )
 
+    # validate the complete model output before replacing any prior valid state
+    try:
+        result = ReviewResult.model_validate(json.loads(llm_response_json))
+    except (json.JSONDecodeError, ValidationError) as e:
+        print("generate_review: invalid model output:", type(e).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="generate_review: model returned an invalid response. Please try again."
+        )
+
     # rotate the files to keep the last two LLM responses
     if OUTPUT_FROM_LLM_CURRENT_FILE.exists():
         os.replace(OUTPUT_FROM_LLM_CURRENT_FILE, OUTPUT_FROM_LLM_PRIOR_FILE)
     OUTPUT_FROM_LLM_CURRENT_FILE.write_text(llm_response_json)
 
     # diff the baseline and revised resumes, and save the diff in the API response
-    response = json.loads(llm_response_json)
-    revised_resume = response["Tailored_Resume"]
+    revised_resume = result.Tailored_Resume
     RESUME_REVISED_FILE.write_text(revised_resume)  # save revised resume
     baseline_resume = RESUME_BASELINE_FILE.read_text()
+    response = result.model_dump(by_alias=True)
     response["Tailored_Resume"] = create_resume_diff(baseline_resume, revised_resume)
 
     return response

@@ -80,3 +80,22 @@ routes — that lands with the next two items (validating LLM output before
 mutating state, and aligning demo/live responses through the same schema).
 Added `tests/test_schemas.py`, which validates both checked-in demo fixtures
 against `ReviewResult` and asserts round-trip and rejection behavior.
+
+### Validate LLM output before changing state
+
+**Confirmed.** Parse and validate the complete provider result before rotating
+or replacing prior valid artifacts. Add bounded repair or safe failure for
+invalid JSON and missing required fields.
+
+gates_release_type: personal
+
+Landed: `generate_review` now parses and validates the raw provider response
+against `ReviewResult` before rotating `OUTPUT_FROM_LLM_CURRENT_FILE` or
+writing `RESUME_REVISED_FILE`. Invalid JSON or a schema mismatch (e.g. a
+missing `Tailored_Resume`) raises a 502 and leaves all prior state untouched;
+no bounded repair was added since a safe failure satisfies the item and keeps
+scope minimal. The response body is now built from the validated model via
+`model_dump(by_alias=True)` rather than the raw parsed dict. Fixed
+`tests/test_api.py::test_invalid_llm_json_does_not_replace_prior_valid_state`
+and `::test_missing_tailored_resume_does_not_replace_prior_valid_state`
+(previously strict xfails).

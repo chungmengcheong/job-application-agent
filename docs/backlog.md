@@ -21,14 +21,6 @@ configuration. **Validation risk** requires a live check.
 Goal: Make the existing personal workflow trustworthy before restructuring it.
 Preserve the current LLM workflow in this increment.
 
-### Validate LLM output before changing state
-
-**Confirmed.** Parse and validate the complete provider result before rotating
-or replacing prior valid artifacts. Add bounded repair or safe failure for
-invalid JSON and missing required fields.
-
-gates_release_type: personal
-
 ### Keep the canned demo but make it read-only and isolated
 
 Retain the checked-in synthetic resume, job description, initial response, and

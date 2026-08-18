@@ -301,10 +301,6 @@ def test_provider_exception_does_not_leak_internal_detail(
     assert secret_detail not in response.text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug: invalid model output replaces the prior current response.",
-)
 def test_invalid_llm_json_does_not_replace_prior_valid_state(
     client: TestClient,
     isolated_paths: dict[str, Path],
@@ -326,10 +322,6 @@ def test_invalid_llm_json_does_not_replace_prior_valid_state(
     assert isolated_paths["output_current_file"].read_text() == prior
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug: missing required model fields replace prior valid state.",
-)
 def test_missing_tailored_resume_does_not_replace_prior_valid_state(
     client: TestClient,
     isolated_paths: dict[str, Path],
