@@ -150,3 +150,49 @@ item, and is not part of the Increment 1 exit gate above. It fits naturally
 with Increment 2's replacement of `/resume` by typed `/api/v1/resumes`
 endpoints with one safe error envelope, so it is left for that increment
 rather than patched piecemeal here.
+
+## Increment 1.5 — Adopt the two-call Groq workflow
+
+Goal: Make the user journey match the evidence-gathering logic and make Groq the
+single supported provider.
+
+### Baseline the current workflow
+
+Capture representative output quality, token use, latency, and failure behavior
+before changing prompts or provider configuration.
+
+gates_release_type: personal
+
+**Skipped by explicit user decision** (2026-08-18): proceed straight to the
+Groq cutover without a baseline capture; see "Compare against the baseline"
+below, also skipped.
+
+### Introduce a thin injectable, config-driven LLM client
+
+Switch the supported provider from OpenAI to Groq. Isolate provider syntax,
+timeouts, model configuration, usage metadata, and raw response handling behind
+one small client that tests can replace. Do not build a multi-provider adapter
+framework.
+
+Refined by explicit user decision (2026-08-18): make the client fully
+config-driven rather than Groq-named, since Groq's chat completions API is
+already OpenAI-schema-compatible — no per-vendor translation logic is needed.
+`backend/llm_client.py`'s `LLMClient` wraps the generic `openai` SDK pointed at
+a configurable `base_url` (default: Groq's OpenAI-compatible endpoint), with
+model, reasoning effort, and max completion tokens all overridable via
+`LLM_MODEL` / `LLM_REASONING_EFFORT` / `LLM_MAX_COMPLETION_TOKENS` env vars.
+This is one call path, not per-vendor branching, so it does not count as the
+multi-provider adapter framework this item still says not to build.
+
+gates_release_type: personal
+
+### Compare against the baseline
+
+Confirm that the two-call flow does not materially reduce evidence fidelity,
+truthfulness, fit quality, or resume coherence.
+
+gates_release_type: personal
+
+**Skipped by explicit user decision** (2026-08-18), alongside "Baseline the
+current workflow" above.
+
