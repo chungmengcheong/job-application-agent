@@ -215,7 +215,8 @@ def get_job_description_from_url(url:Url):
     """Fetch job description from URL."""
     # TODO: Implement logic to fetch job description based on URL vs. demo JD
     if url.demo:
-        job_description = JOB_DESCRIPTION_FILE.read_text()
+        # demo reads its own fixture; it must never read the live temp/ state
+        job_description = JOB_DESCRIPTION_DEMO_FILE.read_text()
         return {"job_description": job_description}
 
     # For now, always return the demo JD when not implemented.
@@ -338,10 +339,10 @@ def manage_resume(command: str, demo: bool = False,
                   creds = Security(security),
                   ):
     """Return the user's saved resume."""
-    # return stubbed response for demo (no auth required for demo)
+    # return stubbed response for demo (no auth required for demo); read-only,
+    # must never touch the live baseline shared with the live workflow
     if demo:
-        shutil.copyfile(RESUME_DEMO_FILE, RESUME_BASELINE_FILE)
-        return {"resume": RESUME_BASELINE_FILE.read_text()}
+        return {"resume": RESUME_DEMO_FILE.read_text()}
 
     # If not in demo and no credentials provided, avoid 401 spam and return a clear error
     if not creds:

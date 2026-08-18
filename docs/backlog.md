@@ -21,14 +21,6 @@ configuration. **Validation risk** requires a live check.
 Goal: Make the existing personal workflow trustworthy before restructuring it.
 Preserve the current LLM workflow in this increment.
 
-### Keep the canned demo but make it read-only and isolated
-
-Retain the checked-in synthetic resume, job description, initial response, and
-follow-up response. Demo calls make no LLM request, require no account, create no
-session, and never read or write live `user/` or `temp/` workflow state.
-
-gates_release_type: personal
-
 ### Align canned demo and live consumer contracts
 
 Validate demo fixtures and mocked live responses against the same schemas and

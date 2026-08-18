@@ -145,6 +145,21 @@ def test_job_description_endpoint_currently_returns_seeded_demo(
     assert response.json() == {"job_description": "DEMO JOB DESCRIPTION"}
 
 
+def test_demo_job_description_never_reads_live_temp_state(
+    client: TestClient, isolated_paths: dict[str, Path]
+) -> None:
+    isolated_paths["job_description_file"].write_text("LIVE SUBMITTED JOB")
+
+    response = client.post(
+        "/jobdescription",
+        json={"url": "https://example.com/job", "demo": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"job_description": "DEMO JOB DESCRIPTION"}
+    assert isolated_paths["job_description_file"].read_text() == "LIVE SUBMITTED JOB"
+
+
 def test_demo_review_is_deterministic_and_skips_llm(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -188,10 +203,6 @@ def test_demo_follow_up_is_deterministic_and_skips_llm(
     assert response.json()["Fit"]["score"] == 8
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug: demo resume load overwrites the shared live baseline.",
-)
 def test_demo_resume_load_does_not_mutate_live_baseline(
     client: TestClient, isolated_paths: dict[str, Path]
 ) -> None:

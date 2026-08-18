@@ -99,3 +99,20 @@ scope minimal. The response body is now built from the validated model via
 `tests/test_api.py::test_invalid_llm_json_does_not_replace_prior_valid_state`
 and `::test_missing_tailored_resume_does_not_replace_prior_valid_state`
 (previously strict xfails).
+
+### Keep the canned demo but make it read-only and isolated
+
+Retain the checked-in synthetic resume, job description, initial response, and
+follow-up response. Demo calls make no LLM request, require no account, create no
+session, and never read or write live `user/` or `temp/` workflow state.
+
+gates_release_type: personal
+
+Landed: `/resume?demo=true` now returns `RESUME_DEMO_FILE` directly instead of
+copying it over the shared live baseline first. `/jobdescription` with
+`demo=true` now reads `JOB_DESCRIPTION_DEMO_FILE` (a dedicated demo fixture)
+instead of `JOB_DESCRIPTION_FILE`, which after the job-description follow-up
+fix now holds whatever job description a live user last submitted. Fixed
+`tests/test_api.py::test_demo_resume_load_does_not_mutate_live_baseline`
+(previously a strict xfail); added
+`::test_demo_job_description_never_reads_live_temp_state`.
