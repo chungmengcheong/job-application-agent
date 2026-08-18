@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 from backend import api
+from backend.schemas import ReviewResult
 
 
 def _extract_prompt_input(prompt: str) -> dict:
@@ -33,6 +34,14 @@ def _assert_review_contract(body: dict) -> None:
             "Where/Evidence",
             "Gap handling",
         }
+
+
+def test_review_and_questions_enforce_the_same_response_schema() -> None:
+    """Demo and live responses on both routes validate against one schema."""
+    routes_by_path = {route.path: route for route in api.app.routes}
+
+    assert routes_by_path["/review"].response_model is ReviewResult
+    assert routes_by_path["/questions"].response_model is ReviewResult
 
 
 def test_health_contract(client: TestClient) -> None:

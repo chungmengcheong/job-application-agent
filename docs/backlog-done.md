@@ -7,6 +7,9 @@ remaining work stay in backlog.md.
 
 ## Increment 1 — Fix personal correctness and isolate the canned demo
 
+Goal: Make the existing personal workflow trustworthy before restructuring it.
+Preserve the current LLM workflow in this increment.
+
 ### Preserve the submitted job description through follow-up
 
 **Confirmed.** `/review` does not save its job description, while `/questions`
@@ -116,3 +119,34 @@ fix now holds whatever job description a live user last submitted. Fixed
 `tests/test_api.py::test_demo_resume_load_does_not_mutate_live_baseline`
 (previously a strict xfail); added
 `::test_demo_job_description_never_reads_live_temp_state`.
+
+### Align canned demo and live consumer contracts
+
+Validate demo fixtures and mocked live responses against the same schemas and
+frontend consumer assertions. Exact model wording need not match.
+
+gates_release_type: personal
+
+Landed: `/review` and `/questions` now declare `response_model=ReviewResult`,
+so every response on either route — demo fixture or live/mocked LLM output —
+is validated and serialized through the identical schema on every request,
+not just checked once against a fixture snapshot. Added
+`tests/test_api.py::test_review_and_questions_enforce_the_same_response_schema`.
+`tests/test_schemas.py` (added under "Add the minimum typed review schemas"
+above) already covers offline validation of both demo fixture files.
+
+## Increment 1 exit gate — met
+
+- A live review and follow-up use the same submitted job description and resume.
+- Invalid model output leaves the prior valid state intact.
+- Repeated demo calls cannot change live state and make no provider call.
+- Production responses do not expose debug or provider exception details.
+
+`tests/test_api.py::test_invalid_resume_command_returns_client_error` remains a
+deliberate strict xfail: it is a "planned contract" item (an unhelpful
+`/resume?command=delete` currently returns HTTP 200 with an `{"error": ...}`
+body instead of a 4xx), not a "confirmed" defect, was never a named backlog
+item, and is not part of the Increment 1 exit gate above. It fits naturally
+with Increment 2's replacement of `/resume` by typed `/api/v1/resumes`
+endpoints with one safe error envelope, so it is left for that increment
+rather than patched piecemeal here.

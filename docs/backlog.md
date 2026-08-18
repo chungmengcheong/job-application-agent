@@ -16,25 +16,6 @@ the item:
 Entries marked **Confirmed** are supported by current code, tests, or build
 configuration. **Validation risk** requires a live check.
 
-## Increment 1 — Fix personal correctness and isolate the canned demo
-
-Goal: Make the existing personal workflow trustworthy before restructuring it.
-Preserve the current LLM workflow in this increment.
-
-### Align canned demo and live consumer contracts
-
-Validate demo fixtures and mocked live responses against the same schemas and
-frontend consumer assertions. Exact model wording need not match.
-
-gates_release_type: personal
-
-Exit gate:
-
-- A live review and follow-up use the same submitted job description and resume.
-- Invalid model output leaves the prior valid state intact.
-- Repeated demo calls cannot change live state and make no provider call.
-- Production responses do not expose debug or provider exception details.
-
 ## Increment 1.5 — Adopt the two-call Groq workflow
 
 Goal: Make the user journey match the evidence-gathering logic and make Groq the

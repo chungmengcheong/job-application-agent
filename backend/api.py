@@ -231,7 +231,7 @@ class JobListing(BaseModel):
     demo: bool = False   # if true, return static demo response
 
 
-@app.post("/review")
+@app.post("/review", response_model=ReviewResult)
 @traceable(name="generate_review_endpoint")
 def generate_review(job_listing: JobListing,
                     creds=Security(security)
@@ -276,7 +276,7 @@ def generate_review(job_listing: JobListing,
         print("generate_review: invalid model output:", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="generate_review: model returned an invalid response. Please try again."
+            detail="generate_review: model returned an invalid response. Try again."
         )
 
     # rotate the files to keep the last two LLM responses
@@ -300,7 +300,7 @@ class QuestionAnswers(BaseModel):
     demo: bool = False   # if true, return static demo response
 
 
-@app.post("/questions")
+@app.post("/questions", response_model=ReviewResult)
 @traceable(name="process_questions_and_answers_endpoint")
 def process_questions_and_answers(user_response: QuestionAnswers,
                                   creds=Security(security)
