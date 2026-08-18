@@ -119,7 +119,7 @@ auth + validation + safe HTTP errors
             ReviewService
         /          |          \
        v           v           v
-SQLiteReviewStore  GroqClient  redline function
+SQLiteReviewStore  LLMClient  redline function
 ```
 
 Boundaries:
@@ -128,8 +128,10 @@ Boundaries:
 - `ReviewService` owns workflow transitions and passes the same immutable inputs
   to both calls;
 - one SQLite store module owns persistence and transactions;
-- one thin injectable Groq client owns provider syntax, model configuration,
-  timeouts, usage, and raw-response handling; and
+- one thin injectable, config-driven LLM client owns provider syntax, model
+  configuration, timeouts, usage, and raw-response handling. The provider
+  (currently Groq, via its OpenAI-compatible endpoint), model, and
+  reasoning/token behavior are configuration, not code; and
 - deterministic redlining remains a function until it needs independent
   dependencies.
 

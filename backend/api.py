@@ -6,14 +6,12 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pydantic import ValidationError
-# from openai import OpenAI
-from groq import Groq
 from langsmith import traceable, Client
 from pathlib import Path
 import os, shutil, datetime
-import httpx
 import json
 from dotenv import load_dotenv
+from backend.llm_client import LLMClient
 from backend.redline import redline_diff
 from backend.schemas import JobListing, QuestionAnswers, ReviewResult, Url
 from backend.security import check_authorized_user, verify_token, security
@@ -50,23 +48,13 @@ JOB_DESCRIPTION_DEMO_FILE = DEMO_DIR / "job_description_demo.txt"
 RESPONSE_REVIEW_ADD_INFO_DEMO_FILE = DEMO_DIR / "API_response_review_add_info_demo.json"
 RESPONSE_REVIEW_DEMO_FILE = DEMO_DIR / "API_response_review_demo.json"
 
-# setup httpx client with proxy if needed (needed for PythonAnywhere)
 print(f"{datetime.datetime.now()} starting up API server...")
-proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
-print("proxy url for pythonanywhere:", proxy_url)
-_timeout = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=60.0)
-if proxy_url:
-    transport = httpx.HTTPTransport(proxy=proxy_url, retries=1)
-    http_client = httpx.Client(transport=transport, timeout=_timeout)
-else:
-    http_client = httpx.Client(timeout=_timeout)
 
-# Setup the LLM client and development tracing. Production can disable tracing
-# by setting LANGSMITH_TRACING_V2=false before the process starts.
-# LLM = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-LLM = Groq(api_key=os.getenv("GROQ_API_KEY"))
-LLM_MODEL = "qwen/qwen3.6-27b"
+# The active provider/model is config-driven; see backend/llm_client.py.
+llm_client = LLMClient()
 
+# Setup development tracing. Production can disable tracing by setting
+# LANGSMITH_TRACING_V2=false before the process starts.
 os.environ.setdefault("LANGSMITH_TRACING_V2", "true")
 os.environ.setdefault("LANGCHAIN_PROJECT", "AIRecruitingAgent")
 langsmith_client = Client(api_key=os.getenv("LANGSMITH_API_KEY"))
@@ -124,34 +112,6 @@ app.include_router(oauth_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-# # Diagnostic route to check outbound connectivity to OpenAI
-# @app.get("/diag/openai")
-# def diag_openai():
-#     """Quick outbound check from the *web app process* (not the console)."""
-#     results = {}
-#     try:
-#         # 1) Raw HTTPS GET without auth (should be 401)
-#         r = httpx.get("https://api.openai.com/v1/models", timeout=10.0)
-#         results["httpx_models_status"] = r.status_code
-#         results["httpx_ok"] = (r.status_code in (200, 401))
-#         results["httpx_body_snippet"] = r.text[:120]
-#     except Exception as e:
-#         results["httpx_exception"] = f"{type(e).__name__}: {e}"
-#
-#     try:
-#         # 2) Minimal OpenAI SDK call
-#         chat = LLM.chat.completions.create(
-#             model="gpt-5-mini",
-#             messages=[{"role": "user", "content": "ping"}],
-#             temperature=0,
-#         )
-#         results["openai_ok"] = True
-#         results["openai_choice_present"] = bool(chat.choices and chat.choices[0].message.content)
-#     except Exception as e:
-#         results["openai_exception"] = f"{type(e).__name__}: {e}"
-#
-#     return results
-
 @app.get("/", include_in_schema=False)
 def splash():
     """Serve the marketing splash page."""
@@ -160,14 +120,8 @@ def splash():
 
 @traceable(name="prompt_LLM")
 def prompt_llm(prompt: str) -> str:
-    """Call OpenAI API to get a response."""
-    response = LLM.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[{"role": "user",
-                   "content": prompt}
-                  ]
-    )
-    return response.choices[0].message.content.strip()
+    """Call the configured LLM to get a response."""
+    return llm_client.complete(prompt)
 
 
 def create_review_prompt(job_description: str) -> str:
@@ -246,14 +200,14 @@ def generate_review(job_listing: JobListing,
 
     # get the LLM response
     prompt = create_review_prompt(job_listing.job_description)
-    print(f"{datetime.datetime.now()}: calling OpenAI with prompt length", len(prompt))
+    print(f"{datetime.datetime.now()}: calling the LLM with prompt length", len(prompt))
     try:
         llm_response_json = prompt_llm(prompt)
     except Exception as e:
-        print("generate_review: OpenAI call failed:", type(e).__name__)
+        print("generate_review: LLM call failed:", type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="generate_review: OpenAI call failed. Please try again."
+            detail="generate_review: LLM call failed. Please try again."
         )
 
     # validate the complete model output before replacing any prior valid state

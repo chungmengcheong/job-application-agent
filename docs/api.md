@@ -76,7 +76,8 @@ these contracts.
 
 ## Increment 1.5 two-call contract
 
-Groq becomes the only supported provider through one thin injectable client.
+Groq becomes the only supported provider through one thin, config-driven
+injectable client; see Configuration below.
 
 ### Call 1: analysis and questions
 
@@ -262,16 +263,24 @@ Current or planned environment configuration includes:
 
 | Variable | Purpose |
 |---|---|
-| `GROQ_API_KEY` | supported provider after Increment 1.5 |
-| `GROQ_MODEL` | explicit supported model |
+| `LLM_API_KEY` | credential for the configured provider (currently Groq) |
+| `LLM_BASE_URL` | OpenAI-compatible endpoint; defaults to Groq's |
+| `LLM_MODEL` | explicit supported model |
+| `LLM_REASONING_EFFORT` | reasoning budget for models that support it; support and accepted values vary by model |
+| `LLM_MAX_COMPLETION_TOKENS` | completion token budget; must fit under the provider tier's rate limit alongside prompt size |
 | `LANGSMITH_TRACING_V2` | must be `false` in production |
 | `GOOGLE_WEB_CLIENT_ID` | Google ID-token audience |
 | `ALLOWED_EMAILS` | invited email allowlist |
 | `ALLOWED_DOMAINS` | invited domain allowlist |
 | `HTTPS_PROXY` / `HTTP_PROXY` | production outbound proxy when required |
 
-OpenAI configuration becomes obsolete after the Groq cutover and should be
-removed once rollback no longer requires it.
+The LLM client (`backend/llm_client.py`) is a thin wrapper around the generic
+`openai` SDK pointed at a configurable `base_url`, not a Groq-specific client.
+Groq's chat completions API is OpenAI-schema-compatible, so switching provider,
+model, or reasoning/token behavior is a config change, not a code change.
+OpenAI API-key configuration (`OPENAI_API_KEY`) is unrelated to this and remains
+obsolete leftover from before the Groq cutover; remove it once rollback no
+longer requires it.
 
 ## Validation boundary
 

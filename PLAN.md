@@ -121,15 +121,19 @@ FastAPI routes: authentication, validation, HTTP errors
               ReviewService
              /      |       \
             v       v        v
-   SQLiteReviewStore  GroqClient  deterministic redline function
+   SQLiteReviewStore  LLMClient  deterministic redline function
 ```
 
 - Routes own HTTP concerns.
 - `ReviewService` owns the two-call workflow and state transitions.
 - One SQLite store module owns persistence. Do not add a repository hierarchy
   for a hypothetical second database.
-- One thin injectable Groq client owns provider syntax, timeouts, usage, and
-  raw-response boundaries. Do not build multi-provider machinery.
+- One thin injectable, config-driven LLM client owns provider syntax, timeouts,
+  usage, and raw-response boundaries. The provider, model, and reasoning/token
+  behavior come from configuration, not code, so switching them is a config
+  change. This is not multi-provider machinery: there is one call path, not
+  per-vendor branching logic, so still do not build a provider adapter
+  framework.
 - Keep deterministic redlining as a function unless it develops service-level
   dependencies.
 

@@ -296,7 +296,7 @@ def test_provider_exception_maps_to_bad_gateway(
     )
 
     assert response.status_code == 502
-    assert "OpenAI call failed" in response.json()["detail"]
+    assert "LLM call failed" in response.json()["detail"]
 
 
 def test_provider_exception_does_not_leak_internal_detail(
