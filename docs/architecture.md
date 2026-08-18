@@ -138,6 +138,61 @@ Boundaries:
 Do not add a repository hierarchy, multi-provider framework, separate redline
 service, or compatibility facade without a demonstrated need.
 
+## LLM client configuration notes
+
+Live-validated 2026-08-18 against Groq's OpenAI-compatible endpoint through
+`backend/llm_client.py`. Two findings materially shape the configuration:
+
+- **`reasoning_effort` accepted values are model-specific and do not
+  overlap.** qwen3 models accept `none` or `default`; gpt-oss models accept
+  `low`, `medium`, or `high`. Passing a value from the wrong set is a hard
+  `400 BadRequestError`, not a fallback. Switching `LLM_MODEL` therefore also
+  requires reviewing `LLM_REASONING_EFFORT` — this is a real coupling the
+  config-driven design does not abstract away, and a two-entry lookup table
+  isn't worth building for it.
+- **Groq's per-minute rate limit (8,000 TPM on the current free/on-demand
+  tier) is checked against `prompt_tokens + requested max_completion_tokens`
+  at request-admission time, before generation runs** — not against tokens
+  actually used. A large `LLM_MAX_COMPLETION_TOKENS` can get an otherwise-fine
+  request rejected with `413` purely on the reservation, independent of the
+  model or prompt content. Upgrading the Groq tier removes this ceiling.
+
+These are two independent failure modes: a reasoning-capable model can also
+burn its entire completion budget on a hidden reasoning trace and return
+truncated, unparseable output (`finish_reason: "length"`) well *under* the TPM
+cap — this is a generation-behavior problem, not a rate-limit problem, and is
+why `reasoning_effort` must be set deliberately rather than left to a model's
+default.
+
+Token usage measured for the same demo-sized prompt (~4,300-char resume and
+job description; `max_completion_tokens=4096` requested in every case),
+representative but not exact — normal sampling variance moves actual
+completion tokens by a few hundred between runs:
+
+| Configuration | prompt tokens | completion tokens | reasoning tokens | total tokens | Result |
+|---|---:|---:|---:|---:|---|
+| `qwen/qwen3.6-27b`, `reasoning_effort=none` | 2,988 | 1,866 | not reported | 4,854 | Valid |
+| `qwen/qwen3.6-27b`, `reasoning_effort=default` | — | — | — | — | `400`: Groq's `json_object` mode validator rejects the reasoning-prefixed output outright ("Failed to validate JSON") |
+| `openai/gpt-oss-120b`, `reasoning_effort=low` | 2,872 | 1,518 | 141 | 4,390 | Valid |
+
+Notes on the table:
+
+- qwen3's usage response does not break out reasoning tokens separately the
+  way gpt-oss's `completion_tokens_details.reasoning_tokens` does; with
+  `reasoning_effort=none` there is no reasoning trace to report regardless.
+- `qwen3.6-27b` + `default` reasoning is not just slower or more
+  token-hungry — combined with `response_format={"type": "json_object"}` it
+  fails the request outright, because the hidden `<think>` trace violates
+  strict JSON-object output. This is a stronger, cleaner failure than the
+  earlier truncation case (no `response_format` and no `max_completion_tokens`
+  set at all), which instead silently burned a small default budget on
+  reasoning and returned truncated, unparseable content
+  (`finish_reason: "length"`, 2,048 completion tokens, zero valid output).
+- Current configuration (`LLM_MODEL=qwen/qwen3.6-27b`,
+  `LLM_REASONING_EFFORT=none`, `LLM_MAX_COMPLETION_TOKENS=4096`) reserves
+  2,988 + 4,096 = 7,084 tokens against the 8,000 TPM cap for this prompt size;
+  actual usage lands well under both the cap and the reservation.
+
 ## Durable domain model
 
 ### User

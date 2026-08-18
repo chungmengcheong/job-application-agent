@@ -12,12 +12,14 @@ import httpx
 from openai import OpenAI
 
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "openai/gpt-oss-120b"
+DEFAULT_MODEL = "qwen/qwen3.6-27b"
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=60.0)
 # Reasoning-capable models spend part of their completion budget "thinking"
 # before answering the actual prompt; how much (or whether it can be turned
-# off at all) varies by model, so this is configurable, not assumed.
-DEFAULT_REASONING_EFFORT = "low"
+# off at all) varies by model, so this is configurable, not assumed. Accepted
+# values are model-specific and do not overlap (qwen3: "none"/"default";
+# gpt-oss: "low"/"medium"/"high") - see docs/architecture.md for measurements.
+DEFAULT_REASONING_EFFORT = "none"
 DEFAULT_MAX_COMPLETION_TOKENS = 4096
 
 
