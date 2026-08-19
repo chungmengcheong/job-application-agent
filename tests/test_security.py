@@ -122,7 +122,7 @@ def test_authorization_rejects_valid_but_uninvited_email(
 def test_oauth_bounce_uses_security_headers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("CHROME_EXTENSION_ID", "extension-id")
+    monkeypatch.setattr(security.settings, "chrome_extension_id", "extension-id")
 
     response = security.oauth2cb()
 

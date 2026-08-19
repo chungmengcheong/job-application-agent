@@ -11,15 +11,10 @@ import os
 import httpx
 from openai import OpenAI
 
+from backend.config import settings
+
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "qwen/qwen3.6-27b"
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=60.0)
-# Reasoning-capable models spend part of their completion budget "thinking"
-# before answering the actual prompt; how much (or whether it can be turned
-# off at all) varies by model, so this is configurable, not assumed. Accepted
-# values are model-specific and do not overlap (qwen3: "none"/"default";
-# gpt-oss: "low"/"medium"/"high") - see docs/architecture.md for measurements.
-DEFAULT_REASONING_EFFORT = "none"
 DEFAULT_MAX_COMPLETION_TOKENS = 4096
 
 
@@ -37,12 +32,8 @@ class LLMClient:
         timeout: httpx.Timeout = DEFAULT_TIMEOUT,
         client: OpenAI | None = None,
     ) -> None:
-        self._model = model or os.getenv("LLM_MODEL") or DEFAULT_MODEL
-        self._reasoning_effort = (
-            reasoning_effort
-            or os.getenv("LLM_REASONING_EFFORT")
-            or DEFAULT_REASONING_EFFORT
-        )
+        self._model = model or settings.llm_model
+        self._reasoning_effort = reasoning_effort or settings.llm_reasoning_effort
         self._max_completion_tokens = int(
             max_completion_tokens
             or os.getenv("LLM_MAX_COMPLETION_TOKENS")
@@ -60,7 +51,7 @@ class LLMClient:
             http_client = httpx.Client(transport=transport)
 
         self._client = OpenAI(
-            api_key=api_key or os.getenv("LLM_API_KEY"),
+            api_key=api_key or settings.llm_api_key,
             base_url=base_url or os.getenv("LLM_BASE_URL") or DEFAULT_BASE_URL,
             timeout=timeout,
             http_client=http_client,

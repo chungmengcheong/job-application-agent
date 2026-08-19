@@ -5,42 +5,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
 import os, base64
-from pathlib import Path
-from dotenv import load_dotenv
 
-
-# Load environment variables from .env file
-REPO_ROOT = Path(__file__).resolve().parents[1]
-ENV_FILE = REPO_ROOT / ".env"
-load_dotenv(dotenv_path=ENV_FILE, override=False)
-
-
-def _clean_env(s: str | None) -> str:
-    # Trim whitespace and surrounding quotes
-    return (s or "").strip().strip(' "\'')
-
-
-def _parse_list(env_name: str) -> set[str]:
-    """
-    Parse a comma-separated env var into a lowercase set.
-    Handles surrounding quotes on the full value and on each item.
-    """
-    raw = _clean_env(os.getenv(env_name))
-    if not raw:
-        return set()
-    items = []
-    for part in raw.split(","):
-        p = part.strip().strip(' "\'')
-        if p:
-            items.append(p.lower())
-    return set(items)
-
+from backend.config import settings
 
 # Set up the HTTP Bearer security scheme and allowed users/domains
 security = HTTPBearer(auto_error=False)
-GOOGLE_WEB_CLIENT_ID = _clean_env(os.getenv("GOOGLE_WEB_CLIENT_ID"))
-ALLOWED_EMAILS = _parse_list("ALLOWED_EMAILS")
-ALLOWED_DOMAINS = _parse_list("ALLOWED_DOMAINS")
+GOOGLE_WEB_CLIENT_ID = settings.google_web_client_id
+ALLOWED_EMAILS = settings.allowed_emails_set
+ALLOWED_DOMAINS = settings.allowed_domains_set
 
 
 router = APIRouter()
@@ -54,7 +26,7 @@ def oauth2cb():
     """Redirects OAuth2 callback endpoint for Chrome extension.
     Workaround the limitation of Chrome extensions not being binded properly in Google Console.
     """
-    ext_id = os.getenv("CHROME_EXTENSION_ID")
+    ext_id = settings.chrome_extension_id
     nonce = _nonce()
 
     # Minimal HTML that forwards the URL fragment (#...) to the extension redirect

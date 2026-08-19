@@ -21,6 +21,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 from backend.api_v1 import api_v1_app
+from backend.config import settings
 from backend.db import init_db
 from backend.schemas import (
     AnalysisResult,
@@ -58,7 +59,7 @@ print(f"{datetime.datetime.now()} starting up API server...")
 # LANGSMITH_TRACING_V2=false before the process starts.
 os.environ.setdefault("LANGSMITH_TRACING_V2", "true")
 os.environ.setdefault("LANGCHAIN_PROJECT", "AIRecruitingAgent")
-langsmith_client = Client(api_key=os.getenv("LANGSMITH_API_KEY"))
+langsmith_client = Client(api_key=settings.langsmith_api_key or None)
 
 # ENVIRONMENT gates debug behavior. Default to development so a missing
 # variable fails toward verbose local debugging rather than a silent
@@ -80,7 +81,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         # Chrome extension
-        "chrome-extension://oblgighcolckndbinadplmmmebjemido",
+        f"chrome-extension://{settings.chrome_extension_id}",
         # Vercel deployed frontend
         "https://ai-recruiting-agent.vercel.app",
         # Local Next.js dev server (two variants to be safe)

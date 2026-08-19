@@ -7,13 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend import llm_client as llm_client_module
-from backend.llm_client import (
-    DEFAULT_BASE_URL,
-    DEFAULT_MAX_COMPLETION_TOKENS,
-    DEFAULT_MODEL,
-    DEFAULT_REASONING_EFFORT,
-    LLMClient,
-)
+from backend.config import settings
+from backend.llm_client import DEFAULT_BASE_URL, DEFAULT_MAX_COMPLETION_TOKENS, LLMClient
 
 
 class FakeCompletions:
@@ -45,17 +40,17 @@ class RecordingOpenAIConstructor:
 
 @pytest.fixture(autouse=True)
 def isolate_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Never let these tests pick up the developer's real LLM/proxy config."""
-    for var in (
-        "LLM_API_KEY",
-        "LLM_BASE_URL",
-        "LLM_MODEL",
-        "LLM_REASONING_EFFORT",
-        "LLM_MAX_COMPLETION_TOKENS",
-        "HTTPS_PROXY",
-        "HTTP_PROXY",
-    ):
+    """Never let these tests pick up the developer's real LLM/proxy config.
+
+    `llm_model`/`llm_reasoning_effort`/`llm_api_key` come from the `settings`
+    singleton (fixed at process start), so isolating them means patching the
+    singleton's attributes rather than the environment.
+    """
+    for var in ("LLM_BASE_URL", "LLM_MAX_COMPLETION_TOKENS", "HTTPS_PROXY", "HTTP_PROXY"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(settings, "llm_api_key", "")
+    monkeypatch.setattr(settings, "llm_model", "qwen/qwen3.6-27b")
+    monkeypatch.setattr(settings, "llm_reasoning_effort", "none")
 
 
 def test_complete_sends_configured_parameters_and_strips_output() -> None:
@@ -68,7 +63,7 @@ def test_complete_sends_configured_parameters_and_strips_output() -> None:
     call = fake_sdk_client.chat.completions.calls[0]
     assert call["model"] == "test-model"
     assert call["messages"] == [{"role": "user", "content": "PROMPT"}]
-    assert call["reasoning_effort"] == DEFAULT_REASONING_EFFORT
+    assert call["reasoning_effort"] == settings.llm_reasoning_effort
     assert call["max_completion_tokens"] == DEFAULT_MAX_COMPLETION_TOKENS
     assert call["response_format"] == {"type": "json_object"}
 
@@ -76,29 +71,31 @@ def test_complete_sends_configured_parameters_and_strips_output() -> None:
 def test_model_defaults_when_no_override_given() -> None:
     client = LLMClient(client=FakeSdkClient())
 
-    assert client.model == DEFAULT_MODEL
+    assert client.model == settings.llm_model
 
 
-def test_model_falls_back_to_llm_model_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LLM_MODEL", "env/configured-model")
+def test_model_falls_back_to_settings_when_no_override_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "llm_model", "configured-model")
 
     client = LLMClient(client=FakeSdkClient())
 
-    assert client.model == "env/configured-model"
+    assert client.model == "configured-model"
 
 
-def test_explicit_model_overrides_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LLM_MODEL", "env/configured-model")
+def test_explicit_model_overrides_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "llm_model", "configured-model")
 
     client = LLMClient(model="explicit-model", client=FakeSdkClient())
 
     assert client.model == "explicit-model"
 
 
-def test_reasoning_effort_and_max_tokens_come_from_env_vars(
+def test_reasoning_effort_comes_from_settings_and_max_tokens_from_env_var(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
+    monkeypatch.setattr(settings, "llm_reasoning_effort", "high")
     monkeypatch.setenv("LLM_MAX_COMPLETION_TOKENS", "2048")
     fake_sdk_client = FakeSdkClient()
 
@@ -115,7 +112,7 @@ def test_configures_proxy_transport_when_https_proxy_is_set(
     recording_constructor = RecordingOpenAIConstructor()
     monkeypatch.setattr(llm_client_module, "OpenAI", recording_constructor)
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
 
     LLMClient()
 
@@ -131,7 +128,7 @@ def test_does_not_build_a_proxy_transport_when_unset(
 ) -> None:
     recording_constructor = RecordingOpenAIConstructor()
     monkeypatch.setattr(llm_client_module, "OpenAI", recording_constructor)
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
 
     LLMClient()
 
@@ -145,7 +142,7 @@ def test_base_url_can_be_overridden_to_target_a_different_provider(
     recording_constructor = RecordingOpenAIConstructor()
     monkeypatch.setattr(llm_client_module, "OpenAI", recording_constructor)
     monkeypatch.setenv("LLM_BASE_URL", "https://api.openai.com/v1")
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
 
     LLMClient()
 
