@@ -11,9 +11,7 @@ import datetime
 import json
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, Security
 from fastapi.responses import FileResponse
 from langsmith import Client
@@ -23,6 +21,14 @@ from starlette.staticfiles import StaticFiles
 from backend.api_v1 import api_v1_app
 from backend.config import settings
 from backend.db import init_db
+from backend.paths import (
+    JOB_DESCRIPTION_DEMO_FILE,
+    RESPONSE_REVIEW_ADD_INFO_DEMO_FILE,
+    RESPONSE_REVIEW_DEMO_FILE,
+    RESUME_DEMO_FILE,
+    RESUME_FILE,
+    STATIC_DIR,
+)
 from backend.schemas import (
     AnalysisResult,
     JobListing,
@@ -33,39 +39,16 @@ from backend.schemas import (
 from backend.security import check_authorized_user, security, verify_token
 from backend.security import router as oauth_router
 
-# Load environment variables from .env file
-REPO_ROOT = Path(__file__).resolve().parents[1]
-ENV_FILE = REPO_ROOT / ".env"
-load_dotenv(dotenv_path=ENV_FILE, override=False)
-
-# Define the directory paths for working files
-BASE_DIR = Path(__file__).resolve().parent.parent
-USER_DIR = BASE_DIR / "user"
-DEMO_DIR = BASE_DIR / "demo"
-STATIC_DIR = BASE_DIR / "static"
-# The one operator resume, until Increment 3.5 introduces per-user stored resumes.
-RESUME_FILE = USER_DIR / "resume.txt"
-# Demo files
-RESUME_DEMO_FILE = DEMO_DIR / "resume_demo.txt"
-JOB_DESCRIPTION_DEMO_FILE = DEMO_DIR / "job_description_demo.txt"
-RESPONSE_REVIEW_ADD_INFO_DEMO_FILE = (
-    DEMO_DIR / "API_response_review_add_info_demo.json"
-)
-RESPONSE_REVIEW_DEMO_FILE = DEMO_DIR / "API_response_review_demo.json"
-
 print(f"{datetime.datetime.now()} starting up API server...")
 
 # Setup development tracing. Production can disable tracing by setting
-# LANGSMITH_TRACING_V2=false before the process starts.
-os.environ.setdefault("LANGSMITH_TRACING_V2", "true")
-os.environ.setdefault("LANGCHAIN_PROJECT", "AIRecruitingAgent")
+# LANGSMITH_TRACING_V2=false before the process starts. The @traceable
+# decorator (backend/review_service.py) reads LANGSMITH_API_KEY from
+# os.environ directly for its own default client, not from settings.
+os.environ.setdefault("LANGSMITH_TRACING_V2", str(settings.langsmith_tracing_v2).lower())
+os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
+os.environ.setdefault("LANGSMITH_API_KEY", settings.langsmith_api_key)
 langsmith_client = Client(api_key=settings.langsmith_api_key or None)
-
-# ENVIRONMENT gates debug behavior. Default to development so a missing
-# variable fails toward verbose local debugging rather than a silent
-# production misconfiguration.
-ENVIRONMENT = (os.getenv("ENVIRONMENT") or "development").strip().lower()
-IS_PRODUCTION = ENVIRONMENT == "production"
 
 
 @asynccontextmanager
@@ -76,17 +59,14 @@ async def lifespan(app: FastAPI):
 
 
 # setup FastAPI app with CORS; mount oauth_router, /api/v1, and static files
-app = FastAPI(debug=not IS_PRODUCTION, lifespan=lifespan)
+app = FastAPI(debug=not settings.is_production, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         # Chrome extension
         f"chrome-extension://{settings.chrome_extension_id}",
-        # Vercel deployed frontend
-        "https://ai-recruiting-agent.vercel.app",
-        # Local Next.js dev server (two variants to be safe)
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        # Deployed frontend + local dev origins
+        *settings.cors_origins,
     ],
     allow_credentials=True,
     allow_methods=["*"],

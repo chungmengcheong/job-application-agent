@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from backend import db
+from backend.config import Settings, settings
+from backend.paths import DEFAULT_DB_PATH
 
 
 def test_init_db_creates_reviews_table(tmp_path: Path) -> None:
@@ -51,16 +53,28 @@ def test_init_db_is_idempotent_and_preserves_data(tmp_path: Path) -> None:
     assert row is not None
 
 
-def test_get_db_path_honors_env_override(
+def test_get_db_path_returns_the_configured_settings_value(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    configured = tmp_path / "custom" / "reviews.db"
+    monkeypatch.setattr(settings, "reviews_db_path", configured)
+
+    assert db.get_db_path() == configured
+
+
+def test_reviews_db_path_honors_env_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`reviews_db_path` is fixed at process start on the shared `settings`
+    singleton, so exercise the env-override behavior on a fresh `Settings()`
+    instance instead of monkeypatching the real `.env` file's values."""
     override = tmp_path / "custom" / "reviews.db"
     monkeypatch.setenv("REVIEWS_DB_PATH", str(override))
 
-    assert db.get_db_path() == override
+    assert Settings(_env_file=None).reviews_db_path == override
 
 
-def test_get_db_path_defaults_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reviews_db_path_defaults_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("REVIEWS_DB_PATH", raising=False)
 
-    assert db.get_db_path() == db.DEFAULT_DB_PATH
+    assert Settings(_env_file=None).reviews_db_path == DEFAULT_DB_PATH

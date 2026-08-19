@@ -1,25 +1,18 @@
 """Utility program to create files for demo API response and input to the LLM."""
 import json
 from pathlib import Path
-from backend.redline import redline_diff as create_resume_diff
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-USER_DIR = BASE_DIR / "user"
-TEMP_DIR = BASE_DIR / "temp"
-DEMO_DIR = BASE_DIR / "demo"
-# User data
-RESUME_FILE = USER_DIR / "resume.txt"
-ADDITIONAL_EXPERIENCE_FILE = USER_DIR / "additional_candidate_info.txt"
-# Temp working files
-RESUME_BASELINE_FILE = TEMP_DIR / "resume_baseline.txt"
-RESUME_REVISED_FILE = TEMP_DIR / "resume_revised.txt"
-USER_RESPONSE_FILE = TEMP_DIR / "user_response.json"
-OUTPUT_FROM_LLM_PRIOR_FILE = TEMP_DIR / "LLM_response_prior.json"
-OUTPUT_FROM_LLM_CURRENT_FILE = TEMP_DIR / "LLM_response_current.json"
-# Demo files
-JOB_DESCRIPTION_DEMO_FILE = DEMO_DIR / "job_description_demo.txt"
-RESPONSE_REVIEW_ADD_INFO_DEMO_FILE = DEMO_DIR / "API_response_review_add_info_demo.json"
-RESPONSE_REVIEW_DEMO_FILE = DEMO_DIR / "API_response_review_demo.json"
+from backend.paths import (
+    ADDITIONAL_EXPERIENCE_FILE,
+    JOB_DESCRIPTION_DEMO_FILE,
+    OUTPUT_FROM_LLM_CURRENT_FILE,
+    REPO_ROOT,
+    RESPONSE_REVIEW_ADD_INFO_DEMO_FILE,
+    RESPONSE_REVIEW_DEMO_FILE,
+    RESUME_BASELINE_FILE,
+    USER_RESPONSE_FILE,
+)
+from backend.redline import redline_diff as create_resume_diff
 
 
 def create_prompt_json_input():
@@ -35,7 +28,7 @@ def create_prompt_json_input():
     if USER_RESPONSE_FILE.exists():
         input_dict["qa_pairs"] = USER_RESPONSE_FILE.read_text()
 
-    json_file = BASE_DIR / "LLM_JSON_input.json"
+    json_file = REPO_ROOT / "LLM_JSON_input.json"
     json_file.write_text(json.dumps(input_dict, indent=4))
 
 

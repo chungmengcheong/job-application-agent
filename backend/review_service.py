@@ -12,13 +12,10 @@ from pydantic import ValidationError
 
 from backend.errors import ApiError
 from backend.llm_client import LLMClient
+from backend.paths import PROMPT_CALL1_ANALYSIS_FILE, PROMPT_CALL2_TAILOR_FILE
 from backend.redline import redline_diff
 from backend.review_store import ReviewRecord, ReviewStore
 from backend.schemas import AnalysisResult, ReviewResult
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-PROMPT_CALL1_ANALYSIS_FILE = REPO_ROOT / "prompts" / "prompt_call1_analysis_GOLD.txt"
-PROMPT_CALL2_TAILOR_FILE = REPO_ROOT / "prompts" / "prompt_call2_tailor_GOLD.txt"
 
 
 class ReviewService:

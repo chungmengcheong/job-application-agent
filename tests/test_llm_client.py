@@ -8,7 +8,7 @@ import pytest
 
 from backend import llm_client as llm_client_module
 from backend.config import settings
-from backend.llm_client import DEFAULT_BASE_URL, DEFAULT_MAX_COMPLETION_TOKENS, LLMClient
+from backend.llm_client import LLMClient
 
 
 class FakeCompletions:
@@ -42,15 +42,21 @@ class RecordingOpenAIConstructor:
 def isolate_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Never let these tests pick up the developer's real LLM/proxy config.
 
-    `llm_model`/`llm_reasoning_effort`/`llm_api_key` come from the `settings`
-    singleton (fixed at process start), so isolating them means patching the
-    singleton's attributes rather than the environment.
+    Every LLM setting comes from the `settings` singleton (fixed at process
+    start), so isolating them means patching the singleton's attributes
+    rather than the environment.
     """
-    for var in ("LLM_BASE_URL", "LLM_MAX_COMPLETION_TOKENS", "HTTPS_PROXY", "HTTP_PROXY"):
-        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(settings, "https_proxy", "")
+    monkeypatch.setattr(settings, "http_proxy", "")
     monkeypatch.setattr(settings, "llm_api_key", "")
     monkeypatch.setattr(settings, "llm_model", "qwen/qwen3.6-27b")
     monkeypatch.setattr(settings, "llm_reasoning_effort", "none")
+    monkeypatch.setattr(settings, "llm_base_url", "https://api.groq.com/openai/v1")
+    monkeypatch.setattr(settings, "llm_max_completion_tokens", 4096)
+    monkeypatch.setattr(settings, "llm_timeout_connect", 10.0)
+    monkeypatch.setattr(settings, "llm_timeout_read", 180.0)
+    monkeypatch.setattr(settings, "llm_timeout_write", 30.0)
+    monkeypatch.setattr(settings, "llm_timeout_pool", 60.0)
 
 
 def test_complete_sends_configured_parameters_and_strips_output() -> None:
@@ -64,7 +70,7 @@ def test_complete_sends_configured_parameters_and_strips_output() -> None:
     assert call["model"] == "test-model"
     assert call["messages"] == [{"role": "user", "content": "PROMPT"}]
     assert call["reasoning_effort"] == settings.llm_reasoning_effort
-    assert call["max_completion_tokens"] == DEFAULT_MAX_COMPLETION_TOKENS
+    assert call["max_completion_tokens"] == settings.llm_max_completion_tokens
     assert call["response_format"] == {"type": "json_object"}
 
 
@@ -92,11 +98,11 @@ def test_explicit_model_overrides_settings(monkeypatch: pytest.MonkeyPatch) -> N
     assert client.model == "explicit-model"
 
 
-def test_reasoning_effort_comes_from_settings_and_max_tokens_from_env_var(
+def test_reasoning_effort_and_max_tokens_come_from_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "llm_reasoning_effort", "high")
-    monkeypatch.setenv("LLM_MAX_COMPLETION_TOKENS", "2048")
+    monkeypatch.setattr(settings, "llm_max_completion_tokens", 2048)
     fake_sdk_client = FakeSdkClient()
 
     LLMClient(client=fake_sdk_client).complete("PROMPT")
@@ -106,12 +112,32 @@ def test_reasoning_effort_comes_from_settings_and_max_tokens_from_env_var(
     assert call["max_completion_tokens"] == 2048
 
 
+def test_timeout_components_come_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recording_constructor = RecordingOpenAIConstructor()
+    monkeypatch.setattr(llm_client_module, "OpenAI", recording_constructor)
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_timeout_connect", 1.0)
+    monkeypatch.setattr(settings, "llm_timeout_read", 2.0)
+    monkeypatch.setattr(settings, "llm_timeout_write", 3.0)
+    monkeypatch.setattr(settings, "llm_timeout_pool", 4.0)
+
+    LLMClient()
+
+    call_timeout = recording_constructor.calls[0]["timeout"]
+    assert call_timeout.connect == 1.0
+    assert call_timeout.read == 2.0
+    assert call_timeout.write == 3.0
+    assert call_timeout.pool == 4.0
+
+
 def test_configures_proxy_transport_when_https_proxy_is_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recording_constructor = RecordingOpenAIConstructor()
     monkeypatch.setattr(llm_client_module, "OpenAI", recording_constructor)
-    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
+    monkeypatch.setattr(settings, "https_proxy", "http://proxy.example:3128")
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
 
     LLMClient()
@@ -119,7 +145,7 @@ def test_configures_proxy_transport_when_https_proxy_is_set(
     assert len(recording_constructor.calls) == 1
     call = recording_constructor.calls[0]
     assert call["api_key"] == "test-key"
-    assert call["base_url"] == DEFAULT_BASE_URL
+    assert call["base_url"] == settings.llm_base_url
     assert call["http_client"] is not None
 
 
@@ -141,7 +167,7 @@ def test_base_url_can_be_overridden_to_target_a_different_provider(
 ) -> None:
     recording_constructor = RecordingOpenAIConstructor()
     monkeypatch.setattr(llm_client_module, "OpenAI", recording_constructor)
-    monkeypatch.setenv("LLM_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setattr(settings, "llm_base_url", "https://api.openai.com/v1")
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
 
     LLMClient()

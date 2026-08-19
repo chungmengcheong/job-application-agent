@@ -6,16 +6,10 @@ default configuration points at Groq's OpenAI-compatible endpoint; the
 `openai` package is used here as a generic client, not because OpenAI is
 the provider.
 """
-import os
-
 import httpx
 from openai import OpenAI
 
 from backend.config import settings
-
-DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=60.0)
-DEFAULT_MAX_COMPLETION_TOKENS = 4096
 
 
 class LLMClient:
@@ -29,22 +23,18 @@ class LLMClient:
         model: str | None = None,
         reasoning_effort: str | None = None,
         max_completion_tokens: int | None = None,
-        timeout: httpx.Timeout = DEFAULT_TIMEOUT,
+        timeout: httpx.Timeout | None = None,
         client: OpenAI | None = None,
     ) -> None:
         self._model = model or settings.llm_model
         self._reasoning_effort = reasoning_effort or settings.llm_reasoning_effort
-        self._max_completion_tokens = int(
-            max_completion_tokens
-            or os.getenv("LLM_MAX_COMPLETION_TOKENS")
-            or DEFAULT_MAX_COMPLETION_TOKENS
-        )
+        self._max_completion_tokens = max_completion_tokens or settings.llm_max_completion_tokens
 
         if client is not None:
             self._client = client
             return
 
-        proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+        proxy_url = settings.https_proxy or settings.http_proxy
         http_client = None
         if proxy_url:
             transport = httpx.HTTPTransport(proxy=proxy_url, retries=1)
@@ -52,8 +42,8 @@ class LLMClient:
 
         self._client = OpenAI(
             api_key=api_key or settings.llm_api_key,
-            base_url=base_url or os.getenv("LLM_BASE_URL") or DEFAULT_BASE_URL,
-            timeout=timeout,
+            base_url=base_url or settings.llm_base_url,
+            timeout=timeout or settings.llm_timeout,
             http_client=http_client,
         )
 

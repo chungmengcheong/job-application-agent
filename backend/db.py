@@ -4,12 +4,10 @@ No `users` or `resumes` tables and no foreign keys yet — that schema work is
 Increment 3.5. `init_db()` only ever runs `CREATE ... IF NOT EXISTS`, so it is
 safe to call on every process startup and never destroys existing data.
 """
-import os
 import sqlite3
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB_PATH = REPO_ROOT / "data" / "reviews.db"
+from backend.config import settings
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS reviews (
@@ -32,8 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_reviews_owner ON reviews(owner);
 
 def get_db_path() -> Path:
     """Return the configured reviews database path."""
-    override = os.getenv("REVIEWS_DB_PATH")
-    return Path(override) if override else DEFAULT_DB_PATH
+    return settings.reviews_db_path
 
 
 def init_db(path: Path | None = None) -> Path:
