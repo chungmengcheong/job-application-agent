@@ -208,6 +208,8 @@ representation on success:
 {
   "id": "rev_...",
   "status": "awaiting_answers",
+  "job_description": "...",
+  "resume": "...",
   "result": { "Fit": { "score": 0, "rationale": "..." }, "Gap_Map": [], "Questions": [] },
   "safe_error_code": null,
   "created_at": "...",
@@ -215,6 +217,10 @@ representation on success:
   "completed_at": null
 }
 ```
+
+`job_description` and `resume` are the immutable inputs for the authenticated
+review. The web client uses them to keep the Job Description and Resume tabs
+available after a durable review is restored.
 
 `result` holds whichever validated shape the review's current stage
 produced — Call 1's `Fit`/`Gap_Map`/`Questions`, or Call 2's revised

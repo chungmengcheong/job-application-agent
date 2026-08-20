@@ -12,8 +12,11 @@ import * as workflow from "./workflow.js";
 // Local editing/session state - not durable server state and not the
 // review/authenticated/demoMode/loading/error workflow state in workflow.js.
 let liveResume = null;
+let baselineResume = null;
+let currentJobDescription = "";
 let redlineSegments = null;
 let editingIndex = null;
+let renderedReview = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -61,6 +64,14 @@ async function prefillSubmissionForm() {
         // best-effort prefill; the user can still paste their own
       }
     }
+    if (!baselineResume) {
+      try {
+        baselineResume = await demoApi.demoResume();
+      } catch {
+        // best-effort load; the tab will explain that the resume is unavailable
+      }
+    }
+    workflow.setState({});
     return;
   }
 
@@ -73,15 +84,20 @@ async function prefillSubmissionForm() {
   if (!liveResume) {
     try {
       liveResume = await api.loadLiveResume();
+      baselineResume = liveResume;
     } catch (err) {
       handleApiError(err);
     }
   }
+  workflow.setState({});
 }
 
 async function handleDemoToggle() {
   const state = workflow.getState();
-  workflow.setState({ demoMode: !state.demoMode, review: null, error: null });
+  baselineResume = null;
+  currentJobDescription = "";
+  renderedReview = null;
+  workflow.setState({ demoMode: !state.demoMode, review: null, error: null, activeTab: "job-description" });
   await prefillSubmissionForm();
 }
 
@@ -91,11 +107,20 @@ async function handleSubmitReview() {
   const sourceUrl = el("source-url").value.trim();
   const state = workflow.getState();
 
+  currentJobDescription = jobDescription;
   workflow.setState({ loading: true, error: null });
   try {
     if (state.demoMode) {
-      const result = await demoApi.demoReview(jobDescription);
-      workflow.setState({ review: { status: "awaiting_answers", result }, loading: false });
+      const [result, resume] = await Promise.all([
+        demoApi.demoReview(jobDescription),
+        demoApi.demoResume(),
+      ]);
+      baselineResume = resume;
+      workflow.setState({
+        review: { status: "awaiting_answers", job_description: jobDescription, resume, result },
+        loading: false,
+        activeTab: "job-fit",
+      });
       return;
     }
     if (!state.authenticated) {
@@ -105,8 +130,17 @@ async function handleSubmitReview() {
     if (!liveResume) {
       liveResume = await api.loadLiveResume();
     }
+    baselineResume = liveResume;
     const review = await api.createReview({ resume: liveResume, jobDescription, sourceUrl });
-    workflow.setState({ review, loading: false });
+    workflow.setState({
+      review: {
+        ...review,
+        job_description: review.job_description || jobDescription,
+        resume: review.resume || liveResume,
+      },
+      loading: false,
+      activeTab: "job-fit",
+    });
     if (review.id) {
       history.pushState(null, "", `/app/reviews/${review.id}`);
     }
@@ -125,11 +159,23 @@ async function handleSubmitAnswers() {
   try {
     if (state.demoMode) {
       const result = await demoApi.demoQuestions(qaPairs);
-      workflow.setState({ review: { status: "completed", result }, loading: false });
+      workflow.setState({
+        review: { ...state.review, status: "completed", result },
+        loading: false,
+        activeTab: "job-fit",
+      });
       return;
     }
     const updated = await api.submitAnswers(state.review.id, qaPairs);
-    workflow.setState({ review: updated, loading: false });
+    workflow.setState({
+      review: {
+        ...updated,
+        job_description: updated.job_description || state.review.job_description || currentJobDescription,
+        resume: updated.resume || state.review.resume || baselineResume,
+      },
+      loading: false,
+      activeTab: "job-fit",
+    });
   } catch (err) {
     handleApiError(err);
   }
@@ -138,7 +184,10 @@ async function handleSubmitAnswers() {
 async function handleLogout() {
   await auth.logout();
   liveResume = null;
-  workflow.setState({ authenticated: false, review: null, error: null });
+  baselineResume = null;
+  currentJobDescription = "";
+  renderedReview = null;
+  workflow.setState({ authenticated: false, review: null, error: null, activeTab: "job-description" });
   await prefillSubmissionForm();
 }
 
@@ -179,24 +228,89 @@ function renderRedlineView() {
   });
 }
 
+function renderReviewTabs(state) {
+  const hasReview = Boolean(state.review);
+  const isCompleted = state.review?.status === "completed";
+  const labels = {
+    "job-description": "Job Description",
+    "job-fit": isCompleted ? "Revised Job Fit" : "Job fit",
+    resume: isCompleted ? "Revised Resume" : "Resume",
+  };
+  const activeTab = hasReview
+    ? (labels[state.activeTab] ? state.activeTab : "job-fit")
+    : (state.activeTab === "resume" ? "resume" : "job-description");
+
+  for (const [tabId, label] of Object.entries(labels)) {
+    const tab = el(`tab-${tabId}`);
+    const panel = el(`tab-panel-${tabId}`);
+    const isActive = tabId === activeTab;
+    if (tab) {
+      tab.textContent = label;
+      tab.setAttribute("aria-selected", String(isActive));
+      tab.tabIndex = isActive ? 0 : -1;
+      tab.disabled = !hasReview && tabId === "job-fit";
+      tab.setAttribute("aria-disabled", String(tab.disabled));
+    }
+    if (panel) {
+      panel.classList.toggle("hidden", !isActive);
+      panel.setAttribute("aria-hidden", String(!isActive));
+    }
+  }
+
+  el("submission-content")?.classList.toggle("hidden", hasReview);
+  el("review-job-description-view")?.classList.toggle("hidden", !hasReview);
+  el("review-questions")?.classList.toggle("hidden", !hasReview || isCompleted);
+  el("baseline-resume-view")?.classList.toggle("hidden", isCompleted);
+  el("revised-resume-view")?.classList.toggle("hidden", !isCompleted);
+}
+
+function renderInitialState(state) {
+  const resume = el("baseline-resume");
+  if (!resume) return;
+  resume.textContent = baselineResume
+    || (state.demoMode || state.authenticated
+      ? "Loading your resume…"
+      : "Your resume will appear here after you log in or turn on demo mode.");
+}
+
+function renderReviewContent(review) {
+  currentJobDescription = review.job_description || currentJobDescription;
+  baselineResume = review.resume || baselineResume;
+
+  const jobDescription = el("review-job-description");
+  if (jobDescription) {
+    jobDescription.textContent = currentJobDescription || "Job description is unavailable for this review.";
+  }
+
+  el("review-fit").innerHTML = renderFit(review.result.Fit);
+  el("review-gap-map").innerHTML = renderGapMap(review.result.Gap_Map);
+
+  if (review.status === "awaiting_answers") {
+    el("questions-form").innerHTML = renderQuestionsForm(review.result.Questions || []);
+    el("baseline-resume").textContent = baselineResume || "Resume is unavailable for this review.";
+  } else {
+    redlineSegments = parseSegments(review.result.Tailored_Resume || "");
+    editingIndex = null;
+    renderRedlineView();
+  }
+  renderedReview = review;
+}
+
 function onWorkflowRender(state, activeSection) {
   updateDemoToggle(state);
   refreshAuthControls(state);
 
-  if (activeSection === "questions" && state.review?.result) {
-    el("questions-fit").innerHTML = renderFit(state.review.result.Fit);
-    el("questions-gap-map").innerHTML = renderGapMap(state.review.result.Gap_Map);
-    el("questions-form").innerHTML = renderQuestionsForm(state.review.result.Questions || []);
+  if (activeSection !== "review" || !state.review?.result) {
+    if (!state.review) {
+      renderedReview = null;
+      renderReviewTabs(state);
+      renderInitialState(state);
+    }
+    return;
   }
 
-  if (activeSection === "result" && state.review?.result) {
-    el("result-fit").innerHTML = renderFit(state.review.result.Fit);
-    el("result-gap-map").innerHTML = renderGapMap(state.review.result.Gap_Map);
-    redlineSegments = parseSegments(state.review.result.Tailored_Resume || "");
-    editingIndex = null;
-    renderRedlineView();
-    el("result-fit").scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  renderReviewTabs(state);
+  if (state.review !== renderedReview) renderReviewContent(state.review);
 }
 
 function wireStaticControls() {
@@ -204,6 +318,25 @@ function wireStaticControls() {
   el("submit-review").onclick = handleSubmitReview;
   el("submit-answers").onclick = handleSubmitAnswers;
   el("redline-toggle").onchange = renderRedlineView;
+  for (const tab of document.querySelectorAll("[data-review-tab]")) {
+    tab.onclick = () => workflow.setActiveTab(tab.dataset.reviewTab);
+    tab.onkeydown = (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const tabs = [...document.querySelectorAll("[data-review-tab]")];
+      const enabledTabs = tabs.filter((candidate) => !candidate.disabled);
+      const currentIndex = enabledTabs.indexOf(tab);
+      if (currentIndex < 0) return;
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? enabledTabs.length - 1
+          : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + enabledTabs.length) % enabledTabs.length;
+      const nextTab = enabledTabs[nextIndex];
+      workflow.setActiveTab(nextTab.dataset.reviewTab);
+      nextTab.focus();
+    };
+  }
   el("copy-resume").onclick = async () => {
     if (!redlineSegments) return;
     try {
@@ -222,6 +355,7 @@ function wireStaticControls() {
   const jdField = el("job-description");
   jdField.addEventListener("input", () => {
     if (workflow.getState().demoMode) {
+      baselineResume = null;
       workflow.setState({ demoMode: false });
     }
   });

@@ -20,6 +20,7 @@ async function restoreReviewFromUrl() {
     workflow.setState({
       review,
       loading: false,
+      activeTab: "job-fit",
       error: review.status === "failed" ? "This review failed. Please start a new one." : null,
     });
   } catch (err) {

@@ -11,13 +11,15 @@
 // copy feedback) is not part of this module - see review-workspace.js and
 // redline.js.
 
-const SECTION_IDS = ["submission", "loading", "questions", "result"];
+const SECTION_IDS = ["loading", "review"];
+const TAB_IDS = ["job-description", "job-fit", "resume"];
 
 const state = {
   review: null,
   authenticated: false,
   demoMode: true,
   loading: false,
+  activeTab: "job-description",
   error: null,
   // Distinct from `authenticated`: a 403 means the session is still valid
   // but this resource is forbidden. A 401 instead clears `authenticated`.
@@ -40,11 +42,15 @@ export function setState(patch) {
   render();
 }
 
+export function setActiveTab(tabId) {
+  if (!TAB_IDS.includes(tabId)) return;
+  state.activeTab = tabId;
+  render();
+}
+
 function sectionFor(s) {
   if (s.loading) return "loading";
-  if (s.review?.status === "awaiting_answers") return "questions";
-  if (s.review?.status === "completed") return "result";
-  return "submission";
+  return "review";
 }
 
 function render() {

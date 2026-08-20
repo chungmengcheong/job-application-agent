@@ -93,18 +93,41 @@ def test_demo_review_and_answers_flow_renders_end_to_end(live_server, page) -> N
         "document.getElementById('job-description').value.length > 0"
     )
 
+    assert page.locator("#section-review").is_visible()
+    assert page.locator("#tab-job-description").get_attribute("aria-selected") == "true"
+    assert page.locator("#tab-job-fit").is_disabled()
+    assert not page.locator("#tab-resume").is_disabled()
+    page.click("#tab-resume")
+    page.wait_for_function(
+        "document.getElementById('baseline-resume').textContent.trim().length > 0"
+    )
+    assert page.locator("#baseline-resume").inner_text().strip() != ""
+    assert "\n" in page.locator("#baseline-resume").text_content()
+    page.click("#tab-job-description")
+
     page.click("#submit-review")
 
-    page.locator("#section-questions").wait_for(state="visible", timeout=20_000)
-    assert page.locator("#questions-fit .fit-badge").inner_text().strip() != ""
+    page.locator("#section-review").wait_for(state="visible", timeout=20_000)
+    assert page.locator("#tab-job-fit").inner_text().strip() == "Job fit"
+    assert page.locator("#tab-resume").inner_text().strip() == "Resume"
+    assert page.locator("#review-fit .fit-badge").inner_text().strip() != ""
     assert page.locator(".gap-card").count() > 0
     assert page.locator(".question-item textarea").count() > 0
+    assert page.locator("#review-job-description").inner_text().strip() != ""
+
+    page.click("#tab-resume")
+    assert page.locator("#baseline-resume").inner_text().strip() != ""
+    page.click("#tab-job-fit")
 
     page.fill(".question-item textarea >> nth=0", "Extra relevant detail for the demo.")
     page.click("#submit-answers")
 
-    page.locator("#section-result").wait_for(state="visible", timeout=20_000)
-    assert page.locator("#result-fit .fit-badge").inner_text().strip() != ""
+    page.locator("#section-review").wait_for(state="visible", timeout=20_000)
+    assert page.locator("#tab-job-fit").inner_text().strip() == "Revised Job Fit"
+    assert page.locator("#tab-resume").inner_text().strip() == "Revised Resume"
+    assert page.locator("#review-questions").is_hidden()
+    assert page.locator("#review-fit .fit-badge").inner_text().strip() != ""
+    page.click("#tab-resume")
     assert page.locator("#redline-container").inner_text().strip() != ""
 
 
@@ -128,6 +151,8 @@ def test_reviews_url_restores_a_durable_review_on_load(live_server, page) -> Non
     review_body = {
         "id": "rev_smoketest",
         "status": "completed",
+        "job_description": "Restored job description.",
+        "resume": "Restored baseline resume.",
         "result": {
             "Fit": {"score": 8, "rationale": "Restored rationale."},
             "Gap_Map": [
@@ -152,10 +177,15 @@ def test_reviews_url_restores_a_durable_review_on_load(live_server, page) -> Non
 
     page.goto(f"{live_server}/app/reviews/rev_smoketest")
 
-    page.locator("#section-result").wait_for(state="visible", timeout=10_000)
-    assert "8/10" in page.locator("#result-fit .fit-badge").inner_text()
-    assert "improved" in page.locator("#redline-container").inner_text()
+    page.locator("#section-review").wait_for(state="visible", timeout=10_000)
+    page.locator("#review-fit .fit-badge").wait_for(state="visible", timeout=10_000)
     assert page.evaluate("document.activeElement.id") == "workspace-heading"
+    assert page.locator("#tab-job-fit").inner_text().strip() == "Revised Job Fit"
+    assert "8/10" in page.locator("#review-fit .fit-badge").inner_text()
+    page.click("#tab-job-description")
+    assert "Restored job description." in page.locator("#review-job-description").inner_text()
+    page.click("#tab-resume")
+    assert "improved" in page.locator("#redline-container").inner_text()
 
 
 def test_splash_page_links_to_the_web_app(live_server, page) -> None:

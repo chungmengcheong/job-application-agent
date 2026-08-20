@@ -28,6 +28,8 @@ def _to_review_out(record: ReviewRecord) -> ReviewOut:
     return ReviewOut(
         id=record.id,
         status=record.status,
+        job_description=record.job_description,
+        resume=record.resume_content,
         result=record.result_json,
         safe_error_code=record.safe_error_code,
         created_at=record.created_at,

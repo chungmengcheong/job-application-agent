@@ -69,6 +69,7 @@ export function renderQuestionsForm(questions) {
     .join("");
   return `
     <div class="questions-form">
+      <h2>Additional Information from you</h2>
       <p class="questions-intro">
         (Optional) I can provide an even more tailored resume if you have additional relevant
         experience and skills. Feel free to skip any question that isn't relevant.

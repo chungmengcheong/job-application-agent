@@ -23,44 +23,71 @@
 <div id="error-banner" class="error-banner hidden" role="alert"></div>
 
 <main class="workspace">
-  <section id="section-submission" class="panel">
-    <h2>Job Description</h2>
-    <p id="submission-hint" class="hint"></p>
-
-    <label for="job-description">Job description</label>
-    <textarea id="job-description" placeholder="Paste job description here..." rows="12"></textarea>
-
-    <label for="source-url">Page URL (optional)</label>
-    <input id="source-url" type="url" placeholder="https://example.com/job">
-
-    <button type="button" id="submit-review" class="primary-button">Submit for Review</button>
-  </section>
-
   <section id="section-loading" class="panel hidden" role="status" aria-live="polite">
     <div class="spinner" aria-hidden="true"></div>
     <p>Generating your review… this can take up to two minutes.</p>
   </section>
 
-  <section id="section-questions" class="panel hidden">
-    <div id="questions-fit"></div>
-    <div id="questions-gap-map"></div>
-    <div id="questions-form"></div>
-    <button type="button" id="submit-answers" class="primary-button secondary">Submit additional information</button>
-  </section>
-
-  <section id="section-result" class="panel hidden">
-    <div id="result-fit"></div>
-    <div id="result-gap-map"></div>
-
-    <div class="resume-controls">
-      <label class="redline-toggle-label">
-        <input type="checkbox" id="redline-toggle" checked>
-        Show redline
-      </label>
-      <button type="button" id="copy-resume" class="secondary-button">Copy clean text</button>
+  <section id="section-review" class="panel review-panel hidden">
+    <div class="review-tabs" role="tablist" aria-label="Review sections">
+      <button type="button" id="tab-job-description" class="review-tab" role="tab" aria-selected="false" aria-controls="tab-panel-job-description" data-review-tab="job-description">
+        Job Description
+      </button>
+      <button type="button" id="tab-job-fit" class="review-tab" role="tab" aria-selected="false" aria-controls="tab-panel-job-fit" data-review-tab="job-fit" disabled>
+        Job fit
+      </button>
+      <button type="button" id="tab-resume" class="review-tab" role="tab" aria-selected="false" aria-controls="tab-panel-resume" data-review-tab="resume">
+        Resume
+      </button>
     </div>
-    <p class="hint">My suggestions are in redline. Hover a change to accept, reject, or edit it.</p>
-    <div id="redline-container" class="resume-body"></div>
+
+    <section id="tab-panel-job-description" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-job-description" tabindex="0">
+      <div id="submission-content">
+        <h2>Job Description</h2>
+        <p id="submission-hint" class="hint"></p>
+
+        <label for="job-description">Job description</label>
+        <textarea id="job-description" placeholder="Paste job description here..." rows="12"></textarea>
+
+        <label for="source-url">Page URL (optional)</label>
+        <input id="source-url" type="url" placeholder="https://example.com/job">
+
+        <button type="button" id="submit-review" class="primary-button">Submit for Review</button>
+      </div>
+      <div id="review-job-description-view" class="hidden">
+        <h2>Job Description</h2>
+        <div id="review-job-description" class="job-description-body"></div>
+      </div>
+    </section>
+
+    <section id="tab-panel-job-fit" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-job-fit" tabindex="0">
+      <div id="review-fit"></div>
+      <div id="review-gap-map"></div>
+      <div id="review-questions" class="hidden">
+        <div id="questions-form"></div>
+        <button type="button" id="submit-answers" class="primary-button secondary">Submit additional information</button>
+      </div>
+    </section>
+
+    <section id="tab-panel-resume" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-resume" tabindex="0">
+      <div id="baseline-resume-view" class="resume-view hidden">
+        <h2>Resume</h2>
+        <div id="baseline-resume" class="resume-body plain-resume"></div>
+      </div>
+
+      <div id="revised-resume-view" class="resume-view hidden">
+        <h2>Revised Resume</h2>
+        <div class="resume-controls">
+          <label class="redline-toggle-label">
+            <input type="checkbox" id="redline-toggle" checked>
+            Show redline
+          </label>
+          <button type="button" id="copy-resume" class="secondary-button">Copy clean text</button>
+        </div>
+        <p class="hint">My suggestions are in redline. Hover a change to accept, reject, or edit it.</p>
+        <div id="redline-container" class="resume-body"></div>
+      </div>
+    </section>
   </section>
 </main>
 

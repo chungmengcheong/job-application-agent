@@ -7,13 +7,34 @@
 <meta name="description" content="AI Recruiting Agent: assess your resume vs. any job, close gaps with targeted prompts, and export a tailored, ATS-friendly resume." />
 <style>
   :root {
-    --bg: #0b1020;
-    --card: #11172b;
-    --ink: #e8eefc;
-    --muted: #9db1ff;
-    --brand: #6da8ff;
-    --accent: #28c890;
-    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    /* Keep this palette aligned with web/css/styles.css. */
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --ink: #172033;
+    --muted: #5e6b85;
+    --brand: #4f46e5;
+    --brand-strong: #3730a3;
+    --on-brand: #ffffff;
+    --border: #d9e1ee;
+    --input-bg: #fafbfc;
+    --resume-bg: #fffefc;
+    --text-secondary: #3f4d63;
+    --surface-muted: #eef2f7;
+    --shadow: 0 8px 24px rgba(23, 32, 51, 0.08);
+    --success-bg: #ecfdf3;
+    --success-strong-bg: #dcfce7;
+    --success-border: #86efac;
+    --success-ink: #166534;
+    --warning-bg: #fffbeb;
+    --warning-soft-bg: #fff7ed;
+    --warning-border: #fcd34d;
+    --warning-soft-ink: #9a3412;
+    --danger-bg: #fef2f2;
+    --danger-border: #fecaca;
+    --danger-ink: #991b1b;
+    --redline-del: #b42318;
+    --redline-add: #16794a;
+    --editing-bg: #eef2ff;
     --radius: 16px;
   }
   * { box-sizing: border-box; }
@@ -24,14 +45,15 @@
   header {
     display: grid; gap: 12px; padding: 28px 0 10px;
   }
-  .badge { display: inline-flex; align-items:center; gap:8px; font-size:12px; padding:6px 10px; border-radius:999px; background: #0f224a; color: var(--muted); border: 1px solid #1f305e;}
+  .badge { display: inline-flex; align-items:center; gap:8px; font-size:12px; padding:6px 10px; border-radius:999px; background: var(--editing-bg); color: var(--muted); border: 1px solid var(--border);}
   .coming-soon {
     display: inline-block;
     margin-left: 8px;
     font-size: 10px;
     font-weight: 600;
-    color: #fff;
-    background: #ff9800;
+    color: var(--warning-soft-ink);
+    background: var(--warning-soft-bg);
+    border: 1px solid var(--warning-border);
     padding: 2px 6px;
     border-radius: 4px;
     vertical-align: middle;
@@ -46,18 +68,18 @@
   .btn {
     appearance: none; border: 0; border-radius: 999px; padding: 12px 18px; font-weight: 600; cursor: pointer;
   }
-  .btn-primary { background: linear-gradient(135deg, var(--brand), #5a7bff 60%); color: white; box-shadow: var(--shadow); }
-  .btn-secondary { background: transparent; color: var(--ink); border: 1px solid #2d3a67; }
+  .btn-primary { background: linear-gradient(135deg, var(--brand), var(--brand-strong) 60%); color: var(--on-brand); box-shadow: var(--shadow); }
+  .btn-secondary { background: transparent; color: var(--ink); border: 1px solid var(--border); }
   .trust { display:flex; align-items:center; gap: 12px; color: var(--muted); font-size: 13px; margin-top: 8px; flex-wrap: wrap; row-gap: 8px; }
   .grid { display: grid; gap: 16px; }
-  .module { background: var(--card); border: 1px solid #1d2647; border-radius: var(--radius); overflow: clip; box-shadow: var(--shadow); }
+  .module { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: clip; box-shadow: var(--shadow); }
   .module-inner { display: grid; gap: 10px; padding: 12px; }
-  .shot { width: 66%; height: auto; display:block; background:#0c1224; margin: 0 auto; }
+  .shot { width: 66%; height: auto; display:block; background: var(--input-bg); margin: 0 auto; }
   .kicker { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-left: 10px}
   .h3 { font-size: clamp(18px, 3vw, 22px); margin: 2px 0; margin-left: 10px;}
-  .copy { color: #c7d6ff; font-size: 14px; line-height: 1.45; margin-left: 10px; }
-  .list { margin: 10px 0 0 18px; color: #c7d6ff; }
-  .pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid #2d3a67; border-radius:999px; font-size:12px; color: #c7d6ff; white-space: normal; max-width: 100%; line-height: 1.25; }
+  .copy { color: var(--text-secondary); font-size: 14px; line-height: 1.45; margin-left: 10px; }
+  .list { margin: 10px 0 0 18px; color: var(--text-secondary); }
+  .pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--border); border-radius:999px; font-size:12px; color: var(--text-secondary); white-space: normal; max-width: 100%; line-height: 1.25; }
   footer { color: var(--muted); font-size: 12px; padding: 28px 0 36px; text-align:center;}
   .cols {
     display: grid;
@@ -101,9 +123,9 @@
         order: 1;
       }
     }
-  .note { font-size:12px; color:#9fb3ff; }
+  .note { font-size:12px; color:var(--muted); }
   .logos { display:flex; gap: 8px; flex-wrap: wrap; }
-  .logos .pill { background: rgba(255,255,255,.02); }
+  .logos .pill { background: var(--surface-muted); }
 </style>
 </head>
 <body>
