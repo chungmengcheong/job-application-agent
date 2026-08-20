@@ -5,10 +5,10 @@ This document records the current frontend and the supported web-only target.
 **Landed (Increment 3, 2026-08-20):** the supported web client is plain
 HTML/CSS/JS with no build step, served by the same FastAPI app as
 `/api/v1` (`web/`), replacing the Next.js/React app for the supported
-product. See `plan-refactor-frontend.md` for the implementation plan this
-followed. `BrowserExtension/` is left untouched (frozen) until the separate
-later Cleanup backlog item retires it; it is no longer built, deployed, or
-referenced by the supported product.
+product. See `plan-refactor-frontend.md` for the historical implementation
+plan this followed. The obsolete `BrowserExtension/` tree and generated
+extension release have now been removed; Git tag
+`chrome-extension-last-working` preserves the last working implementation.
 
 ## Supported web client (`web/`)
 
@@ -50,22 +50,13 @@ Because the web client is same-origin with `/api/v1`, every request is a
 plain relative `fetch(...)` — no `BACKEND_URL` env, no local/cloud dev
 toggle, and no CORS handling for this origin at all.
 
-## Frozen extension runtime
+## Retired extension runtime
 
-The repository still contains a side-panel manifest, background worker,
-content-script/iframe legacy path, Chrome identity and storage code, and a
-custom static-export packaging script under `BrowserExtension/`. None of it
-is built, deployed, or imported by the supported web client.
-
-Do not refactor these into shared platform adapters. After the supported web
-app no longer depends on extension-only files:
-
-- delete the manifest, worker, content script, Chrome OAuth/storage code,
-  packaging scripts, generated extension artifacts, and extension-only tests;
-- rename `BrowserExtension/` to a web-oriented directory in a contained change;
-  and
-- preserve a tagged Git reference (`chrome-extension-last-working`) and a
-  short historical architecture note.
+The former side-panel manifest, background worker, content script, Chrome
+identity/storage code, Next.js/React client, packaging scripts, generated
+artifacts, and extension-only tests are no longer in the active tree. The
+supported `web/` client never imported them, so no web-oriented rename or
+shared platform adapter was needed.
 
 After the web workflow is reliable, reassess a new thin extension against three
 browser-native jobs: extracting the active page's job description, assisting
@@ -200,9 +191,9 @@ contract" is satisfied by that absence rather than by a passing check:
   `web/` file takes effect on the next refresh, no build/watch process
   involved.
 
-The current Next.js/React app and extension build are frozen and were not
-touched by this rewrite. A future extension would receive its own release
-contract if the browser-native jobs justify resuming it.
+The retired Next.js/React app and extension build remain available at Git tag
+`chrome-extension-last-working`. A future extension would receive its own
+release contract if the browser-native jobs justify resuming it.
 
 ## Current web gaps
 
@@ -211,8 +202,6 @@ contract if the browser-native jobs justify resuming it.
 - `web/auth-callback.html` ports the prior callback's behavior as-is: it
   does not fail closed when expected state or nonce is missing from
   `sessionStorage` (Increment 4 hardens this).
-- a fixed side-panel layout and Chrome-only concepts remain in the frozen
-  Next.js/React code, unused by the new web client;
 - multiple stored resumes and active selection do not yet exist — the live
   workflow still loads the one operator resume via the legacy authenticated
   `GET /resume` (Increment 3.5 replaces this with `resume_id`); and
@@ -227,4 +216,4 @@ shape, and the client-side restoration mechanism (verified by
 using a seeded token and an intercepted API response rather than live
 OAuth). They do not prove deployed OAuth, responsive layout, or a live
 authenticated two-call workflow end to end. Those require the explicit
-production checks in `docs/backlog.md`'s Increment 4.
+production checks in [../backlog.md](../backlog.md)'s Increment 4.

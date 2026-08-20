@@ -29,11 +29,10 @@ proven.
 Note:
 1. /backend: The FastAPI backend (plus various utils, e.g., authentication) that serves as the main orchestrator of the AI pipeline 
 2. /web: The supported web client - plain HTML/CSS/JS, no build step, served by the same FastAPI app at `/app`
-3. /BrowserExtension: The frozen Next.js web app plus the frozen Chrome-extension implementation; not built or deployed. Kept until the separate Cleanup backlog item retires it (see `docs/frontend.md`).
-4. /demo: fixed synthetic inputs and canned API responses used by the permanent public demo
-5. /evals: A collection of evaluation scripts to assess the performance of the AI models (future)
-6. /prompts: A collection of prompt templates used by the AI models
-7. /tests: A collection of unit tests for the backend, plus `tests/test_web_smoke.py`, a dev-only browser smoke test of `/web`
+3. /demo: fixed synthetic inputs and canned API responses used by the permanent public demo
+4. /evals: A collection of evaluation scripts to assess the performance of the AI models (future)
+5. /prompts: A collection of prompt templates used by the AI models
+6. /tests: A collection of unit tests for the backend, plus `tests/test_web_smoke.py`, a dev-only browser smoke test of `/web`
 
 
 ### Deploying on PythonAnywhere
@@ -71,4 +70,4 @@ node --test web/tests/*.test.mjs                 # pure-logic unit tests
 pip install -r requirements-dev.txt               # dev-only, not a runtime dependency
 playwright install chromium                        # once
 pytest tests/test_web_smoke.py                     # production-like browser smoke test
-``` 
+```

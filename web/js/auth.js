@@ -1,7 +1,7 @@
 // Google OAuth (implicit flow) and token storage for the web client.
 //
 // Web-only: there is no Chrome extension API surface to detect or remove
-// here (the frozen extension keeps its own auth code in BrowserExtension/).
+// here. The retired extension implementation is preserved by Git tag.
 
 // Public web OAuth client id (not secret - sent to the browser regardless);
 // see backend/config.py's `google_web_client_id`, the same value.

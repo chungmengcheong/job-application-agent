@@ -1,4 +1,0 @@
-/* Ensure our panel doesn't interfere with page styles */
-#ai-recruiting-panel {
-  all: initial !important;
-}

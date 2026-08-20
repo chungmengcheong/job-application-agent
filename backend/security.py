@@ -1,11 +1,8 @@
 """User authentication and authorization for FastAPI backend."""
 from fastapi import Depends, HTTPException, Security, status
-from fastapi import APIRouter, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
-import os, base64
-
 from backend.config import settings
 
 # Set up the HTTP Bearer security scheme and allowed users/domains
@@ -13,61 +10,6 @@ security = HTTPBearer(auto_error=False)
 GOOGLE_WEB_CLIENT_ID = settings.google_web_client_id
 ALLOWED_EMAILS = settings.allowed_emails_set
 ALLOWED_DOMAINS = settings.allowed_domains_set
-
-
-router = APIRouter()
-
-def _nonce(n=16):
-    return base64.urlsafe_b64encode(os.urandom(n)).decode().rstrip("=")
-
-
-@router.get("/oauth2cb")
-def oauth2cb():
-    """Redirects OAuth2 callback endpoint for Chrome extension.
-    Workaround the limitation of Chrome extensions not being binded properly in Google Console.
-    """
-    ext_id = settings.chrome_extension_id
-    nonce = _nonce()
-
-    # Minimal HTML that forwards the URL fragment (#...) to the extension redirect
-    html = f"""<!doctype html>
-<meta charset="utf-8">
-<title>OAuth redirect</title>
-<script nonce="{nonce}">
-  // Forward the fragment intact to the extension's chromiumapp URL
-  var frag = location.hash || "";
-  location.replace("https://{ext_id}.chromiumapp.org/" + frag);
-</script>
-<noscript>JavaScript required for redirect.</noscript>
-"""
-
-    # resp = Response(html, mimetype="text/html")
-    resp = Response(content=html, media_type="text/html")
-
-    # Strict caching + security headers
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
-
-    # CSP: only allow this one inline script via nonce; block everything else
-    resp.headers["Content-Security-Policy"] = (
-        f"default-src 'none'; "
-        f"script-src 'nonce-{nonce}'; "
-        f"base-uri 'none'; "
-        f"frame-ancestors 'none'; "
-        f"connect-src 'none'; "
-        f"img-src 'none'; "
-        f"style-src 'none'"
-    )
-
-    # Extra hardening
-    resp.headers["Referrer-Policy"] = "no-referrer"
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["X-Frame-Options"] = "DENY"
-    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-
-    return resp
 
 
 def verify_token(creds: HTTPAuthorizationCredentials = Security(security)):
@@ -118,5 +60,4 @@ def check_authorized_user(claims: dict = Depends(verify_token)) -> dict:
         status_code=status.HTTP_403_FORBIDDEN,
         detail=f"{email} is not an authorized user. Please contact ccmmmail@gmail.com for access."
     )
-
 

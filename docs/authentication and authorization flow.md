@@ -1,8 +1,8 @@
 # Authentication and authorization flow
 
-This note distinguishes the supported web flow from the frozen Chrome extension
-flow. Code and [api.md](api.md) remain the current source of truth. The original
-extension-specific note is preserved verbatim in
+This note distinguishes the supported web flow from the retired Chrome
+extension flow. Code and [api.md](api.md) remain the current source of truth.
+The original extension-specific note is preserved verbatim in
 [authentication flow for chrome extension - deprecated.md](authentication%20flow%20for%20chrome%20extension%20-%20deprecated.md).
 
 ## Supported web flow
@@ -29,16 +29,22 @@ extension-specific note is preserved verbatim in
 6. The browser stores the current credential according to the supported web
    session design and sends the ID token as `Authorization: Bearer <ID_TOKEN>`.
 
-The current implementation stores tokens in `localStorage` and does not fail
-closed when an expected state or nonce is missing. These are production
-validation and hardening items, not confirmed target behavior.
+The current implementation directly implements Google's implicit endpoint
+flow, stores tokens in `localStorage`, and does not fail closed when an expected
+state or nonce is missing. Because the app needs identity only and does not call
+Google APIs for the user, Increment 4 should replace this with Google Identity
+Services Sign in with Google unless a concrete requirement justifies retaining
+the custom flow. Browser credential storage versus a server session is a
+separate explicit decision, not an inherited default.
 
 ### Backend authentication and authorization
 
 For every protected endpoint, one FastAPI dependency should:
 
 1. verify the ID-token signature, issuer, audience, and expiry;
-2. require a verified email claim before allowlist evaluation;
+2. require an explicitly true verified-email claim before allowlist evaluation
+   (the current `claims.get("email_verified", True)` is a confirmed fail-open
+   defect);
 3. apply the configured email/domain allowlist;
 4. resolve or create the internal user from the stable Google `sub`; and
 5. return a typed current user.
@@ -64,21 +70,21 @@ After submission:
 The canned demo remains unauthenticated because it uses only server-owned fixed
 fixtures and makes no provider call.
 
-## Frozen Chrome extension flow
+## Retired Chrome extension flow
 
 Historically, the extension used a stable manifest key, a Web OAuth client, a
 PythonAnywhere `/oauth2cb` bounce, and `chrome.identity.launchWebAuthFlow()` to
 forward the fragment to the extension's `chromiumapp.org` callback. It stored
 tokens in `chrome.storage.local`.
 
-This flow is unsupported while extension development is frozen:
+The implementation and `/oauth2cb` bounce have been removed from the active
+tree and remain recoverable at Git tag `chrome-extension-last-working`:
 
 - do not extend or modernize it;
 - do not let its bounce callback or Chrome storage requirements shape the web
   authentication design; and
-- archive or remove the current extension OAuth route and client code from the
-  active tree after web-only separation is verified. A future thin extension
-  should choose authentication from its actual browser-native requirements.
+- a future thin extension should choose authentication from its actual
+  browser-native requirements.
 
 ## Required validation
 

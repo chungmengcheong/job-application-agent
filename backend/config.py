@@ -57,21 +57,12 @@ class Settings(BaseSettings):
     https_proxy: str = ""
     http_proxy: str = ""
 
-    # Google OAuth / Chrome extension identity - not secret (sent to the
-    # browser / visible in the extension's own manifest), but named here
-    # rather than duplicated as string literals across files.
+    # Google OAuth client identity - public browser configuration, not secret.
     google_web_client_id: str = "258289407737-mdh4gleu91oug8f5g8jqkt75f62te9kv.apps.googleusercontent.com"
-    chrome_extension_id: str = "oblgighcolckndbinadplmmmebjemido"
 
     # Authorized-user allowlist - no default; must come from .env.
     allowed_emails: str = ""
     allowed_domains: str = ""
-
-    # CORS - the Chrome extension origin is assembled from chrome_extension_id
-    # at the call site (it needs the chrome-extension:// scheme prefix). The
-    # supported web client (web/) is served same-origin by this same FastAPI
-    # app, so it needs no CORS entry at all; only the frozen extension does.
-    cors_origins: list[str] = []
 
     # Deployment environment. Defaults to development so a missing variable
     # fails toward verbose local debugging rather than a silent production

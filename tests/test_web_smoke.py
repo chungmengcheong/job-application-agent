@@ -111,7 +111,7 @@ def test_reviews_url_restores_a_durable_review_on_load(live_server, page) -> Non
     """A fresh page load at /app/reviews/{id} must hydrate from
     `GET /api/v1/reviews/{id}`, not from memory - the exit-gate behavior
     itself. Live Google OAuth is out of scope here (Increment 4's job - see
-    docs/backlog.md); this seeds a stored token and intercepts just the one
+    backlog.md); this seeds a stored token and intercepts just the one
     `/api/v1/reviews/{id}` call to exercise the real main.js/workflow.js/
     review-display.js/redline.js restoration path end-to-end.
     """

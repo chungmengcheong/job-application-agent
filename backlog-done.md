@@ -555,3 +555,21 @@ Exit gate:
   never imported from `BrowserExtension/`.
 
 
+## Cleanup — Archive the frozen Chrome extension implementation — Done
+
+Landed after Increment 3 established that the supported `web/` client had no
+imports from or runtime dependency on the frozen implementation.
+
+- Preserved the last working Next.js/React and Chrome-extension implementation
+  at Git tag `chrome-extension-last-working`.
+- Deleted the obsolete `BrowserExtension/` tree rather than renaming it;
+  `web/` is already the supported web-oriented directory.
+- Deleted the checked-in generated release under `releases/dist-extension/`.
+- Removed the extension-only `/oauth2cb` bounce, Chrome CORS origin, extension
+  ID setting, and their test.
+- Updated the architecture, frontend, authentication, and README notes to
+  distinguish the retired implementation from the still-open future extension
+  hypothesis.
+
+gates_release_type: clean-up
+

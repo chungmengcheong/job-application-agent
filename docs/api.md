@@ -1,7 +1,7 @@
 # AI Recruiting Agent — Backend API Notes
 
 This document records the current API and the minimum replacement contract. It
-does not define implementation order; see [backlog.md](backlog.md).
+does not define implementation order; see [../backlog.md](../backlog.md).
 
 ## Current API
 
@@ -20,7 +20,6 @@ entry but does not partition the global workflow files by user.
 | `POST /review` | Call 1: generate fit, gaps, and questions | No tailored resume yet by design |
 | `POST /questions` | Call 2: regenerate fit/gaps and produce the tailored resume using answers | Uses the persisted job description, not a resubmission |
 | `GET /resume` | Load/save/delete the single resume | Demo load can alter the shared baseline |
-| `GET /oauth2cb` | Legacy Chrome OAuth bounce | Deprecated with the extension |
 
 Live `/review` and `/questions` require authentication. Caller-controlled demo
 flags select checked-in responses and bypass normal live generation.
@@ -87,7 +86,7 @@ Field names stay today's PascalCase (`Fit`, `Gap_Map`, `Questions`,
 `Tailored_Resume`) rather than the lowercase shape this section showed before
 implementation. Explicit user decision (2026-08-18): renaming to snake_case now
 and again at the `/api/v1` cutover was judged worse than renaming once, at that
-boundary; see docs/backlog-done.md's Increment 1.5 entry.
+boundary; see [../backlog-done.md](../backlog-done.md)'s Increment 1.5 entry.
 
 ### Call 1: analysis and questions — `POST /review`
 

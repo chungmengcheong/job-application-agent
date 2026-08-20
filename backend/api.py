@@ -15,7 +15,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Security
 from fastapi.responses import FileResponse
 from langsmith import Client
-from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 from backend.api_v1 import api_v1_app
@@ -38,7 +37,6 @@ from backend.schemas import (
     Url,
 )
 from backend.security import check_authorized_user, security, verify_token
-from backend.security import router as oauth_router
 
 print(f"{datetime.datetime.now()} starting up API server...")
 
@@ -59,22 +57,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
-# setup FastAPI app with CORS; mount oauth_router, /api/v1, and static files
+# Set up the same-origin FastAPI application, durable API, and static files.
 app = FastAPI(debug=not settings.is_production, lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        # Chrome extension
-        f"chrome-extension://{settings.chrome_extension_id}",
-        # Deployed frontend + local dev origins
-        *settings.cors_origins,
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-# Mount the callback rounter /oauth2cb
-app.include_router(oauth_router)
 # Mount the durable, authenticated review API
 app.mount("/api/v1", api_v1_app)
 # Serve static files at /static

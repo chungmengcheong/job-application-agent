@@ -1,12 +1,12 @@
 # Implementation Plan — Increment 3: Simplify the web client around the durable API
 
 **Status: Landed (2026-08-20).** All five steps below are implemented under
-`web/`; see [docs/backlog-done.md](docs/backlog-done.md)'s Increment 3 entry
+`web/`; see [backlog-done.md](backlog-done.md)'s Increment 3 entry
 for what actually shipped and [docs/frontend.md](docs/frontend.md) for the
 current state. This file is kept as the historical implementation record,
 not a live plan.
 
-Source: [`docs/backlog.md`](docs/backlog.md), "Increment 3 — Simplify the web
+Source: [`backlog.md`](backlog.md), "Increment 3 — Simplify the web
 client around the durable API". This plan sequences that increment's five
 items into concrete file-level work. It does not touch Increment 3.5+ scope
 (stored resumes, users) or the later Chrome-extension archival cleanup.

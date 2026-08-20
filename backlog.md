@@ -16,31 +16,33 @@ the item:
 Entries marked **Confirmed** are supported by current code, tests, or build
 configuration. **Validation risk** requires a live check.
 
-## Increment 3.5 — Add durable users, stored resumes, and one-time trial onboarding
+## Increment 3.5 — Add durable users and stored resumes
 
 Goal: Introduce durable users and stored resumes — the identity that
 Increment 2's `Review` records referenced only loosely, by raw `sub` and
-inline resume content — and use them to let a new visitor obtain one custom
-review without turning the canned demo into a live unauthenticated provider
-endpoint.
+inline resume content — and replace the personal app's legacy
+`user/resume.txt` dependency without adding beta onboarding concerns.
 
 ### Add SQLite configuration and migrations for users and resumes
 
 Add `users` and `resumes` tables with foreign keys and transaction boundaries,
 and a development-safe initialization command. Migrate existing `reviews`
-rows forward: resolve or create the matching `users` row for each recorded
-`sub`, and add a nullable `resume_id` column recording which stored resume (if
-any) a review used. Do not add repository hierarchies, separate artifact
-tables, model-call tables, or optimistic versions.
+rows forward: create the matching `users` row keyed by each recorded `sub`, and
+add a nullable `resume_id` column recording which stored resume (if any) a
+review used. Existing review rows do not contain a verified email, so migrated
+users must allow email to remain null until the user's next verified login (or
+another verified backfill); never invent it. Do not add repository hierarchies,
+separate artifact tables, model-call tables, or optimistic versions.
 
-gates_release_type: beta
+gates_release_type: personal
 
 ### Add internal users derived from verified identity
 
 Resolve or create a user from the verified Google `sub`. Use email for display
-and allowlist audit, never as the ownership key.
+and allowlist audit, never as the ownership key. A verified login updates a
+missing or changed email on that user.
 
-gates_release_type: beta
+gates_release_type: personal
 
 ### Support stored resumes and one active selection
 
@@ -52,47 +54,34 @@ accordingly. Do not add archive or resume version history yet.
 
 gates_release_type: personal
 
-### Collect trial inputs ephemerally
-
-Allow a visitor to enter a resume and job description before authentication.
-Keep them only in browser memory. Make no LLM call and persist no sensitive input.
-
-gates_release_type: beta
-
-### Require authentication and explicit submission
-
-After authentication, show what will be submitted and require an explicit
-action. Create the internal user, store the resume as active, create the owned
-review, and then run the normal two-call workflow.
-
-gates_release_type: beta
-
-### Define one-time eligibility and abuse controls
-
-Specify what makes the trial one-time and apply input, token, timeout, and rate
-limits. Do not weaken ownership or create an unauthenticated Groq endpoint.
-
-gates_release_type: beta
-
 Exit gate:
 
 - One authenticated user can manage stored resumes and select one as active.
-- Reviews created back in Increment 2 resolve to a real owning `users` row.
-- No sensitive trial input is persisted and no provider call occurs before authentication and explicit submission.
-- The resulting resume and review are owned by the newly created user.
+- Reviews created before Increment 3.5 resolve to a real owning `users` row
+  without fabricating missing identity claims.
+- Review creation takes an owned `resume_id` while retaining an immutable
+  inline snapshot for both model calls.
+- The legacy live `GET /resume` path and `user/resume.txt` dependency are gone.
 - The canned demo remains a separate fixture-based experience.
 
 
 ## Increment 4 — Validate the production boundary
 
 Goal: Verify the deployment assumptions required by the supported personal web
-application.
+application before adding beta onboarding behavior.
 
 ### Verify and harden web authentication
 
 **Validation risk plus confirmed defects.** Exercise callback registration,
 state, nonce, expiry, logout, verified email, and unauthorized-user paths. Fail
-closed when expected state or nonce is missing.
+closed when expected state or nonce is missing. The current client directly
+implements Google's implicit endpoint flow even though it needs authentication
+only, not access to Google APIs; replace that hand-built flow with Google
+Identity Services Sign in with Google unless a concrete requirement justifies
+keeping it. Decide explicitly whether the resulting browser credential remains
+client-stored or is exchanged for a server session rather than preserving
+`localStorage` by default. Fix the confirmed backend defect that currently
+treats a missing `email_verified` claim as verified.
 
 gates_release_type: personal
 
@@ -129,6 +118,41 @@ Exit gate:
 
 - Every production validation risk is converted to verified behavior,
   configuration work, or a reproducible defect.
+
+
+## Increment 4.5 — Add authenticated one-time trial onboarding
+
+Goal: Let a new visitor obtain one custom review without turning the canned
+demo into a live unauthenticated provider endpoint. Durable users and resumes
+already exist and the personal production workflow has already been validated.
+
+### Collect trial inputs ephemerally
+
+Allow a visitor to enter a resume and job description before authentication.
+Keep them only in browser memory. Make no LLM call and persist no sensitive input.
+
+gates_release_type: beta
+
+### Require authentication and explicit submission
+
+After authentication, show what will be submitted and require an explicit
+action. Create the internal user, store the resume as active, create the owned
+review, and then run the normal two-call workflow.
+
+gates_release_type: beta
+
+### Define one-time eligibility and abuse controls
+
+Specify what makes the trial one-time and apply input, token, timeout, and rate
+limits. Do not weaken ownership or create an unauthenticated Groq endpoint.
+
+gates_release_type: beta
+
+Exit gate:
+
+- No sensitive trial input is persisted and no provider call occurs before authentication and explicit submission.
+- The resulting resume and review are owned by the newly created user.
+- The canned demo remains a separate fixture-based experience.
 
 ## Increment 5 — Prove limited-beta isolation
 
@@ -167,20 +191,6 @@ Exit gate:
 - Two users can run overlapping workflows with no cross-user access or state
   corruption.
 - The beta has a tested release, backup, and rollback path.
-
-## Cleanup — Archive the frozen Chrome extension implementation
-
-Perform after the supported web application no longer depends on extension-only
-files. This retires the current implementation, not the extension hypothesis.
-
-- Keep extension development and releases frozen during the web-first phase.
-- Separate any still-shared web code.
-- Delete manifest, service worker, content script, Chrome OAuth/storage code,
-  extension packaging scripts, generated artifacts, and extension-only tests.
-- Rename `BrowserExtension/` to a web-oriented directory in a contained change.
-- Preserve a tagged Git reference and a short historical architecture note.
-
-gates_release_type: clean-up
 
 ## Future decision — Reassess a thin browser-native extension
 

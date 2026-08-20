@@ -117,19 +117,3 @@ def test_authorization_rejects_valid_but_uninvited_email(
         )
 
     assert error.value.status_code == 403
-
-
-def test_oauth_bounce_uses_security_headers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(security.settings, "chrome_extension_id", "extension-id")
-
-    response = security.oauth2cb()
-
-    assert "https://extension-id.chromiumapp.org/" in response.body.decode()
-    assert response.headers["Cache-Control"].startswith("no-store")
-    assert response.headers["Content-Security-Policy"].startswith(
-        "default-src 'none'"
-    )
-    assert response.headers["X-Frame-Options"] == "DENY"
-    assert response.headers["Referrer-Policy"] == "no-referrer"
