@@ -2,6 +2,13 @@
 
 This document records the current frontend and the supported web-only target.
 
+**Target direction (Increment 3, 2026-08-19):** the supported web client is
+being rewritten as plain HTML/CSS/JS with no build step, served by the same
+FastAPI app as `/api/v1` (a new `web/` directory), replacing the Next.js/
+React app described below. See `plan-refactor-frontend.md` for the detailed
+implementation plan. `BrowserExtension/` is left untouched until the
+separate later Cleanup backlog item retires it.
+
 ## Current implementation
 
 One large React panel currently runs in two hosts:
@@ -136,21 +143,23 @@ the first fallback.
 
 ## Supported web target
 
-Use a deliberately small decomposition:
+A plain HTML/CSS/JS client, with no build step, served by the same FastAPI
+app as `/api/v1` — no separate host, framework, or bundler. Use a
+deliberately small decomposition:
 
 ```text
-web shell and routes
+one page + a handful of JS modules
     |
-    +-- typed API client
-    +-- ReviewWorkspace + explicit workflow state
+    +-- thin shared fetch helper
+    +-- review workspace module, display driven by the review's own status
     +-- resume management and active selection
     +-- review/fit/gap/question display
     +-- existing redline display and local editing
 ```
 
-Do not begin with a predicted hierarchy of feature folders or web/Chrome
-platform interfaces. Extract further components only as independently complex
-behavior emerges.
+Do not begin with a predicted hierarchy of feature folders, a component
+framework, or web/Chrome platform interfaces. Split into further modules
+only as independently complex behavior emerges.
 
 ## State ownership
 
@@ -165,20 +174,13 @@ Refreshing the page refetches this state by ID.
 
 ### Workflow state
 
-A reducer or equivalent explicit model should represent approximately:
-
-```text
-booting
-demo_ready
-signed_out
-resume_required
-ready
-submitting_analysis
-awaiting_answers
-submitting_answers
-completed
-error
-```
+Don't invent a separate client-side state name to keep in sync by hand.
+Derive what the UI shows directly from the review's own status
+(`processing | awaiting_answers | completed | failed`, the same enum
+`backend/review_store.py` already uses) once a review exists, alongside a
+few independent flags that aren't part of that enum: whether the user is
+authenticated, whether demo mode is active, whether a request is in flight,
+and the last error (if any).
 
 Authentication is a session fact, not something inferred from loaded resume
 content.
@@ -187,7 +189,7 @@ content.
 
 - unsent job description;
 - unsent answers;
-- active tab;
+- which view section is currently shown;
 - redline visibility;
 - locally accepted/rejected/edited changes; and
 - copy feedback.
@@ -195,43 +197,48 @@ content.
 Finalized-resume persistence is deferred. Copy/download and local editing may
 remain without creating additional server artifact versions.
 
-## Typed client contract
+## Shared fetch helper
 
 Centralize:
 
 - `/api/v1` URLs;
 - bearer headers;
-- request and response schemas;
 - safe error codes;
 - timeouts; and
 - JSON parsing.
 
-Do not add SSE parsing, reconnect logic, provider events, or Chrome storage
+This is a small module, not a compiled "typed" client — nothing enforces
+request/response shapes without a compiler, and the backend already
+validates them (`backend/schemas.py`) before they reach the browser. Do not
+add SSE parsing, reconnect logic, provider events, or Chrome storage
 abstractions.
 
 ## Build and release contract
 
-The supported web client must have:
+The supported web client is plain HTML/CSS/JS with no package manager,
+lockfile, bundler, or compiler — most of a conventional "build and release
+contract" is satisfied by that absence rather than by a passing check. What
+still applies:
 
-- one package manager and lockfile;
-- intentional dependency versions rather than `latest`;
-- non-interactive tests, lint, and typecheck;
-- no suppression of TypeScript or lint failures during builds;
-- one documented production build; and
-- a production-like browser smoke test.
+- non-interactive pure-logic unit tests (`node --test`, no install step);
+- one documented production-like browser smoke test exercising the two-call
+  demo flow; and
+- one documented way to run it locally (`uvicorn backend.api:app --reload`,
+  browse to `/app/` — no separate build/watch process).
 
-The current extension build is frozen and may be removed after web separation.
-A future extension would receive its own release contract if the browser-native
-jobs justify resuming it.
+The current Next.js/React app and extension build are frozen and may be
+removed after web separation. A future extension would receive its own
+release contract if the browser-native jobs justify resuming it.
 
 ## Current web gaps
 
 - OAuth callback registration and failure behavior are not live-verified.
 - Missing expected OAuth state or nonce does not fail closed.
-- a fixed side-panel layout and Chrome-only concepts remain in shared code;
-- TypeScript and lint failures do not reliably block builds;
-- there is no durable review restoration;
-- the redline parser has a known mixed-change defect; and
+- a fixed side-panel layout and Chrome-only concepts remain in the frozen
+  Next.js/React code, unused by the new web client;
+- there is no durable review restoration yet (Increment 3 adds it);
+- the redline parser (`components/resume-renderer.tsx`, being ported in
+  Increment 3) has a known mixed-change defect; and
 - multiple stored resumes and active selection do not yet exist.
 
 ## Validation boundary

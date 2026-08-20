@@ -11,13 +11,16 @@ stored resume with a pasted job description, assesses fit and gaps, asks
 targeted questions, produces a tailored resume from the added evidence, and
 shows deterministic editable redlines.
 
-The statically exported Next.js web app is the only supported client going
-forward during the current refactor. Chrome extension development and releases
-are frozen because the web and extension currently share a React panel, but
-Chrome-specific interfaces and shells are not part of the near-term target
-architecture. After the web client is separated, the obsolete extension
-implementation can leave the active tree while a tagged Git reference and
-historical architecture note preserve it.
+A plain HTML/CSS/JS web client, with no build step, served by the same
+FastAPI app as `/api/v1`, is the only supported client going forward during
+the current refactor (Increment 3) — replacing the Next.js/React app that
+used to share code with the Chrome extension. Chrome extension development
+and releases are frozen because that Next.js app and the extension currently
+share a React panel, but Chrome-specific interfaces and shells were never
+part of the near-term target architecture, and the new web client doesn't
+reuse any of that shared code. After the web client is separated, the
+obsolete Next.js/extension implementation can leave the active tree while a
+tagged Git reference and historical architecture note preserve it.
 
 The extension remains a plausible future execution surface for capabilities
 that genuinely benefit from running beside the page: extracting a job
@@ -70,7 +73,8 @@ Important current constraints:
   per call, twice per full review-and-tailor cycle.
 - the frontend cutover (`BrowserExtension/lib/api.ts`) is intentionally ad
   hoc — it unwraps the `/api/v1` Review envelope back into the flat shape the
-  panel already expected, rather than the typed client Increment 3 adds.
+  panel already expected, rather than the shared fetch helper Increment 3
+  adds in the new plain HTML/CSS/JS client.
 
 ## Canned demo boundary
 
@@ -118,7 +122,7 @@ sequencing are deferred. If synchronous HTTP becomes unreliable, use
 
 ```text
 Web application
-typed API client + explicit workflow state
+plain HTML/CSS/JS, no build step, served by the same FastAPI app
                   |
                   v
 FastAPI routes
@@ -150,9 +154,11 @@ service, or compatibility facade without a demonstrated need.
 As of Increment 2, the backend half of this diagram is implemented
 (`backend/api_v1.py`'s FastAPI routes, `backend/review_service.py`'s
 `ReviewService`, `backend/review_store.py`'s `ReviewStore`, the unchanged
-`LLMClient`/`redline_diff`). The web application half — a typed API client
-and explicit workflow state, replacing `lib/api.ts`'s ad hoc `/api/v1`
-envelope unwrapping — is Increment 3.
+`LLMClient`/`redline_diff`). The web application half is Increment 3: a
+plain HTML/CSS/JS client (no framework, no build step) served from a new
+`web/` directory by the same FastAPI app, replacing both the Next.js/React
+app under `BrowserExtension/` and its ad hoc `lib/api.ts` `/api/v1`
+envelope-unwrapping.
 
 ## LLM client configuration notes
 
@@ -277,7 +283,7 @@ not resolve through the live store.
 | Concern | Current state | Required validation |
 |---|---|---|
 | Backend | FastAPI on PythonAnywhere | deployed personal workflow |
-| Web | static Next.js export | callback, CORS, responsive workflow |
+| Web | static Next.js export (Increment 3: plain HTML/CSS/JS, same-origin on PythonAnywhere, no Vercel) | callback, responsive workflow |
 | Extension | frozen shared-code legacy | no longer a current release gate; reassess browser-native jobs after the web workflow is proven |
 | Provider | Groq migration in working tree | model, proxy, timeouts, safe errors |
 | Persistence | SQLite `reviews` table (`data/reviews.db`) | production durability, backup, locking |

@@ -111,8 +111,8 @@ synchronous HTTP proves unreliable, the next simplest transport is
 ## Small target architecture
 
 ```text
-Web application
-  typed API client + explicit workflow state
+Web application (plain HTML/CSS/JS, no build step, served by the same
+FastAPI app — no separate host)
                     |
                     v
 FastAPI routes: authentication, validation, HTTP errors
@@ -227,17 +227,27 @@ verified.
 
 ## Frontend boundary
 
-The first decomposition should be only as large as the current problems require:
+The supported web client is plain HTML/CSS/JS with no build step, served by
+the same FastAPI app that serves `/api/v1` — no separate deploy target,
+framework, or bundler to keep in sync. The first decomposition should be
+only as large as the current problems require:
 
-- typed API client;
-- `ReviewWorkspace` with an explicit reducer or state model;
-- resume management and active-resume selection;
+- a thin shared fetch helper (auth header, timeout, safe-error-envelope
+  parsing) — not a compiled "typed" client, since nothing enforces request/
+  response shapes without a compiler and the backend already validates them;
+- a review workspace module wiring that helper to the page, with review
+  display driven directly by the review's own `status` field rather than a
+  separately maintained workflow-state name that has to be kept in sync;
+- resume management and active-resume selection (Increment 3.5, once stored
+  resumes exist);
 - review/fit/gap/question presentation; and
 - existing redline display and editing behavior.
 
-Separate durable server state, workflow state, and ephemeral editing state.
-Do not create Chrome/web platform interfaces or a predicted tree of feature
-modules. Split components further when their behavior becomes independently
+Separate durable server state (the `Review` row itself — already the source
+of truth, never duplicated client-side), in-flight/loading state, and
+ephemeral local editing state (unsent form input, not-yet-persisted redline
+edits). Do not create Chrome/web platform interfaces or a predicted tree of
+feature modules. Split further only when behavior becomes independently
 complex.
 
 ## Testing and safety rules
@@ -250,8 +260,9 @@ complex.
 - Validate canned demo fixtures and mocked live responses through the same
   consumer schemas.
 - Preserve strict known-defect tests until the fixing increment makes them pass.
-- Run focused tests, the complete backend suite, frontend tests, typecheck, and
-  the supported web build after each relevant increment.
+- Run focused tests, the complete backend suite, any frontend logic tests,
+  and the browser smoke test after each relevant increment. The web client
+  has no compile or bundle step to typecheck or build.
 - Production validation is required for Google OAuth, Groq, hosting, and SQLite
   persistence; mocks do not establish those boundaries.
 

@@ -399,3 +399,12 @@ Exit gate:
 - `backend/api.py` no longer references `temp/`; `lifespan` only calls
   `init_db()`.
 
+## Increment 2.5 Consolidate scattered backend configuration - Done
+
+Landed (`73110c2`, `2dc41c6`, ): Created a 
+`pydantic_settings.BaseSettings` singleton in `config.y` for non-secret operational defaults. Added
+`backend/paths.py` for the structural, never-overridden file-path constants.
+
+gates_release_type: clean-up
+
+
