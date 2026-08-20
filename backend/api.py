@@ -28,6 +28,7 @@ from backend.paths import (
     RESUME_DEMO_FILE,
     RESUME_FILE,
     STATIC_DIR,
+    WEB_DIR,
 )
 from backend.schemas import (
     AnalysisResult,
@@ -84,6 +85,22 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def splash():
     """Serve the marketing splash page."""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/app/reviews/{review_id}", include_in_schema=False)
+def web_review_page(review_id: str):
+    """Serve the one web app document for a durable-review URL.
+
+    Registered before the /app static mount below, since a static file mount
+    alone 404s on a path with no matching file. web/js/main.js reads the
+    review id back out of location.pathname client-side.
+    """
+    return FileResponse(WEB_DIR / "index.html")
+
+
+# Serve the supported web client at /app (plain HTML/CSS/JS, no build step).
+# html=True serves index.html automatically for /app/ and its subpaths.
+app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 
 @app.get("/health")

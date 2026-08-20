@@ -407,4 +407,151 @@ Landed (`73110c2`, `2dc41c6`, ): Created a
 
 gates_release_type: clean-up
 
+## Increment 3 — Simplify the web client around the durable API
+
+Goal: Make the web application deliberate, restorable, and independently
+maintainable without Chrome abstractions.
+
+Refined by explicit user decision (2026-08-19, recorded in
+`plan-refactor-frontend.md`): rewrite the web client as plain HTML/CSS/JS
+with no build step (`web/`), served by the same FastAPI app as `/api/v1`,
+rather than refactoring `BrowserExtension/`'s Next.js/React app in place.
+Rationale: the product surface is small, most of `package.json` was dead
+weight unrelated to being "a webapp that grew out of a Chrome extension",
+and one FastAPI-served origin removes a whole cross-origin surface (CORS, a
+build-time `BACKEND_URL`, a second deploy target). A git tag
+(`chrome-extension-last-working`) was cut before starting, satisfying the
+later Cleanup item's "preserve a tagged Git reference" concern immediately.
+`BrowserExtension/` was left entirely untouched — nothing was ported from it
+line-for-line; `web/` is written fresh, porting only actual *behavior*
+(`resume-renderer.tsx`'s redline logic, the OAuth callback's state/nonce
+handling), not files.
+
+### Add a shared fetch helper
+
+Centralize `/api/v1` requests, safe-error-envelope parsing, authentication
+headers, and timeouts in one small module. Do not add a build step, a
+framework, or event-stream parsing.
+
+gates_release_type: personal
+
+Landed: `web/js/api.js`'s `apiFetch` centralizes the bearer header
+(from `web/js/auth.js`'s stored token), a timeout (150s for the two model
+calls, 30s elsewhere, via `AbortController`), and safe-error-envelope
+parsing; it attaches the HTTP status to the thrown `Error` so callers can
+distinguish 401 from 403. `createReview`/`getReview`/`submitAnswers` are
+one-line wrappers, not a schema-mirroring typed client. `loadLiveResume`
+also lives here (not in `demo-api.js`) since it needs the same auth header,
+even though its route (`GET /resume`) predates `/api/v1` — Increment 3.5
+replaces it with `resume_id`. `web/js/demo-api.js` is a separate module for
+the canned demo's non-`/api/v1` routes (`/review`, `/questions`, `/resume`,
+`/jobdescription`), whose response/error shapes differ from the durable
+contract. Added `web/tests/api.test.mjs`, `web/tests/auth.test.mjs`
+(`node --test`, no `package.json`).
+
+### Introduce explicit workflow state
+
+Separate durable server state, in-flight/loading state, and local editing
+state. Derive what the UI shows directly from the review's own status
+rather than a separately maintained state name. Authentication must not be
+inferred from loaded resume content.
+
+gates_release_type: personal
+
+Landed: `web/js/workflow.js` holds exactly `review` (the current `ReviewOut`
+or a demo-mode equivalent shape), `authenticated`, `demoMode`, `loading`,
+`error`, and `notAuthorized`. `render()` derives which top-level `<section>`
+is visible from `review?.status` plus `loading`, with no separate
+client-side workflow-state enum. `authenticated` is set only from
+`auth.js`'s stored-token presence/checks and 401 responses
+(`review-workspace.js`'s `handleApiError`); a 403 instead sets the distinct
+`notAuthorized` flag and leaves `authenticated` untouched.
+
+### Apply the minimum module split
+
+Extract only a review workspace, review display, and redline editing around
+the fetch helper and review state. Resume management and active-resume
+selection do not exist yet; add that module in Increment 3.5, once stored
+resumes exist. Split further only when behavior becomes independently
+complex.
+
+gates_release_type: clean-up
+
+Landed: `web/js/review-workspace.js` is the orchestrator (DOM wiring,
+submit/answer actions, header auth/demo controls). `web/js/review-display.js`
+renders fit/gap-map/question-form HTML. `web/js/redline.js` owns
+accept/reject/edit. `web/js/redline.js` parses the backend's `<add>`/`<del>`
+markup into segments addressed by array index rather than by re-matching the
+original markup substring — the prior React port
+(`resume-renderer.tsx`)'s `tailoredMarkdown.replace(originalMarkup, ...)`
+targeted only the first textual match, wrong when two changes carry
+identical markup. Toolbars use CSS `:hover`/`:focus-within` instead of
+JS-tracked hover state, simpler than the ported component. No resume-selection
+module or generic tab-router was added.
+
+### Build a deliberate full-page web product
+
+Remove Chrome-only controls and fixed side-panel assumptions. Serve the web
+client from the same FastAPI app as `/api/v1`, retiring the separate Vercel
+deploy. Add responsive review routes, accessible loading/error states, and
+restoration by durable review ID. Resume routes arrive in Increment 3.5 with
+stored resumes.
+
+gates_release_type: beta
+
+Landed: `web/index.html` is one document with all view states as `<section>`
+blocks in normal responsive document flow (`web/css/styles.css`, plain
+flexbox/grid, no Tailwind). `backend/paths.py` adds `WEB_DIR`;
+`backend/api.py` mounts `app.mount("/app", StaticFiles(directory=WEB_DIR,
+html=True))` plus an explicit `GET /app/reviews/{review_id}` route
+(registered before the mount, since a static mount alone 404s on a path with
+no matching file) that serves the same `index.html` for the SPA-fallback
+pattern. `web/js/main.js` reads a review ID out of `location.pathname` and
+hydrates via `GET /api/v1/reviews/{review_id}`; on a successful live
+`createReview`, `review-workspace.js` calls `history.pushState` so the URL
+becomes bookmarkable/refreshable. Demo mode never changes the URL. Loading
+gets `role="status" aria-live="polite"`; the error banner gets `role="alert"`;
+restoring a review from a fresh load moves focus to a heading
+(`#workspace-heading`, `tabindex="-1"`). `backend/config.py`'s
+`cors_origins` is now `[]` (same-origin web client needs none; only the
+frozen Chrome extension's origin, assembled separately, still applies).
+`static/index.html`'s "Try in browser" CTA now points at `/app/`. Keyboard
+operability for redline accept/reject/edit remains a real gap, not
+addressed here (hover-driven, as before).
+
+### Confirm the supported web client needs no build step
+
+Plain HTML/CSS/JS has no package manager, lockfile, bundler, or compiler to
+standardize. Add a production-like browser smoke test exercising the
+two-call demo flow, and any pure-logic unit tests, run non-interactively.
+
+gates_release_type: beta
+
+Landed: no `package.json` under `web/` at all. `tests/test_web_smoke.py`
+(dev-only — `requirements-dev.txt` adds `playwright`/`pytest-playwright`,
+not a runtime dependency; `pytest.importorskip` skips cleanly without them)
+starts the real `uvicorn backend.api:app` in a subprocess against a
+throwaway database and drives a real Chromium browser through the full
+demo Call 1 → answers → Call 2 flow, plus a durable-review-ID restoration
+test (seeds a stored token and intercepts the one `GET
+/api/v1/reviews/{id}` call via Playwright route mocking, since live Google
+OAuth is Increment 4's job) confirming `main.js`/`workflow.js`/
+`review-display.js`/`redline.js` hydrate a fresh page load correctly.
+README.md and `docs/frontend.md` document the one local workflow
+(`uvicorn backend.api:app --reload --port 8000`, browse to `/app/`) and the
+two test commands (`node --test web/tests/*.test.mjs`,
+`pytest tests/test_web_smoke.py`).
+
+Exit gate:
+
+- Refresh restores a durable review from the backend — verified end-to-end
+  in `tests/test_web_smoke.py` via a seeded token and an intercepted
+  `GET /api/v1/reviews/{id}` response, since live Google OAuth registration
+  is validated separately in Increment 4.
+- The supported web client's tests (`node --test web/tests/*.test.mjs`) and
+  browser smoke test (`pytest tests/test_web_smoke.py`) pass
+  non-interactively; there is no build, typecheck, or lint step to run.
+- `grep -rn "chrome\." web/` returns nothing — `web/` was written fresh and
+  never imported from `BrowserExtension/`.
+
 

@@ -12,6 +12,7 @@ USER_DIR = REPO_ROOT / "user"
 DEMO_DIR = REPO_ROOT / "demo"
 TEMP_DIR = REPO_ROOT / "temp"
 STATIC_DIR = REPO_ROOT / "static"
+WEB_DIR = REPO_ROOT / "web"
 PROMPTS_DIR = REPO_ROOT / "prompts"
 DATA_DIR = REPO_ROOT / "data"
 

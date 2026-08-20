@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Signing in…</title>
+<style>
+  body { display: flex; height: 100vh; align-items: center; justify-content: center;
+         font-family: system-ui, sans-serif; margin: 0; background: #0b1020; color: #e8eefc; }
+  p { font-size: 14px; color: #9db1ff; }
+</style>
+</head>
+<body>
+<p id="message">Completing sign-in…</p>
+<script type="module">
+  import { saveAuthToken, OAUTH_STATE_KEY, OAUTH_NONCE_KEY } from "/app/js/auth.js";
+
+  function base64UrlToObject(segment) {
+    const padded = segment + "=".repeat((4 - (segment.length % 4)) % 4);
+    const normal = padded.replace(/-/g, "+").replace(/_/g, "/");
+    try {
+      return JSON.parse(atob(normal));
+    } catch {
+      return {};
+    }
+  }
+
+  function setMessage(text) {
+    document.getElementById("message").textContent = text;
+  }
+
+  async function completeSignIn() {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+
+    const oauthError = params.get("error");
+    if (oauthError) {
+      setMessage(`Authentication error: ${params.get("error_description") || oauthError}`);
+      return;
+    }
+
+    const accessToken = params.get("access_token");
+    const idToken = params.get("id_token");
+    const expiresIn = parseInt(params.get("expires_in") || "0", 10);
+    const state = params.get("state");
+
+    if (!accessToken || !idToken || !expiresIn || !state) {
+      setMessage("Authentication failed: missing token(s).");
+      return;
+    }
+
+    // Live callback hardening (failing closed when expected state/nonce is
+    // missing) is Increment 4's job - see docs/frontend.md's current gaps.
+    // This ports the same present-only comparison the prior React callback used.
+    const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+    if (expectedState && state !== expectedState) {
+      setMessage("Authentication failed: state mismatch.");
+      return;
+    }
+
+    const payload = base64UrlToObject(idToken.split(".")[1] || "");
+    const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
+    if (expectedNonce && payload?.nonce !== expectedNonce) {
+      setMessage("Authentication failed: nonce mismatch.");
+      return;
+    }
+
+    await saveAuthToken({
+      accessToken,
+      idToken,
+      expiresAt: Date.now() + expiresIn * 1000,
+    });
+
+    sessionStorage.removeItem(OAUTH_STATE_KEY);
+    sessionStorage.removeItem(OAUTH_NONCE_KEY);
+
+    window.location.replace("/app/");
+  }
+
+  completeSignIn().catch((err) => setMessage(`Authentication failed: ${err?.message || "unknown error"}`));
+</script>
+</body>
+</html>

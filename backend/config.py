@@ -68,13 +68,10 @@ class Settings(BaseSettings):
     allowed_domains: str = ""
 
     # CORS - the Chrome extension origin is assembled from chrome_extension_id
-    # at the call site (it needs the chrome-extension:// scheme prefix); these
-    # are the rest of the allowed origins.
-    cors_origins: list[str] = [
-        "https://ai-recruiting-agent.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+    # at the call site (it needs the chrome-extension:// scheme prefix). The
+    # supported web client (web/) is served same-origin by this same FastAPI
+    # app, so it needs no CORS entry at all; only the frozen extension does.
+    cors_origins: list[str] = []
 
     # Deployment environment. Defaults to development so a missing variable
     # fails toward verbose local debugging rather than a silent production

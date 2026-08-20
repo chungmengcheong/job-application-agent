@@ -28,11 +28,12 @@ proven.
 ### Repo details
 Note:
 1. /backend: The FastAPI backend (plus various utils, e.g., authentication) that serves as the main orchestrator of the AI pipeline 
-2. /BrowserExtension: The current Next.js web source plus the frozen Chrome-extension implementation; this directory will be renamed after the web code is separated.
-3. /demo: fixed synthetic inputs and canned API responses used by the permanent public demo
-4. /evals: A collection of evaluation scripts to assess the performance of the AI models (future)
-5. /prompts: A collection of prompt templates used by the AI models
-6. /tests: A collection of unit tests for the backend
+2. /web: The supported web client - plain HTML/CSS/JS, no build step, served by the same FastAPI app at `/app`
+3. /BrowserExtension: The frozen Next.js web app plus the frozen Chrome-extension implementation; not built or deployed. Kept until the separate Cleanup backlog item retires it (see `docs/frontend.md`).
+4. /demo: fixed synthetic inputs and canned API responses used by the permanent public demo
+5. /evals: A collection of evaluation scripts to assess the performance of the AI models (future)
+6. /prompts: A collection of prompt templates used by the AI models
+7. /tests: A collection of unit tests for the backend, plus `tests/test_web_smoke.py`, a dev-only browser smoke test of `/web`
 
 
 ### Deploying on PythonAnywhere
@@ -51,23 +52,23 @@ Note:
 
 ### Deploying locally
 
-1. Backend (from the repo root):
+The backend serves the web client itself - one process, no separate frontend
+dev server, build, or watch step:
 
 ```
-source .venv/bin/activate   # if you're using the repo's venv 
-uvicorn backend.api:app --reload --port 8000 
+source .venv/bin/activate   # if you're using the repo's venv
+uvicorn backend.api:app --reload --port 8000
 ```
 
---port 8000 matters: the frontend's "local" mode is hardcoded to http://127.0.0.1:8000 (BrowserExtension/lib/api.ts). Your .env already has LLM_API_KEY, GOOGLE_WEB_CLIENT_ID ALLOWED_EMAILS etc. set, so this should just work.
+Then browse to http://127.0.0.1:8000/app/. Editing any file under `web/`
+takes effect on the next refresh. Your `.env` already has `LLM_API_KEY`,
+`GOOGLE_WEB_CLIENT_ID`, `ALLOWED_EMAILS`, etc. set, so this should just work.
 
-2. Frontend — it's a Next.js app, so next dev is the local run, no build/deploy needed:
+### Testing the web client
 
 ```
-  cd BrowserExtension
-  npm install   # only if you haven't already
-  npm run dev
-```
-
-  This serves at http://localhost:3000, and the backend's CORS config already whitelists that origin.
-
-3. Point the web app at your local backend: open http://localhost:3000 (or /panel), and click the small "API: Cloud" pill near the top of the panel to flip it to "API:  Local". 
+node --test web/tests/*.test.mjs                 # pure-logic unit tests
+pip install -r requirements-dev.txt               # dev-only, not a runtime dependency
+playwright install chromium                        # once
+pytest tests/test_web_smoke.py                     # production-like browser smoke test
+``` 

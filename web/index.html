@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Recruiting Agent</title>
+<meta name="description" content="Assess your resume against a job description, close gaps with targeted questions, and get a tailored, redlined resume.">
+<link rel="stylesheet" href="/app/css/styles.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">
+    <h1 id="workspace-heading" tabindex="-1">AI Recruiting Agent</h1>
+    <p class="tagline">AI-Powered Job Application Helper</p>
+  </div>
+  <div class="header-controls">
+    <button type="button" id="demo-toggle" class="pill-button"></button>
+    <div id="auth-controls"></div>
+  </div>
+</header>
+
+<div id="error-banner" class="error-banner hidden" role="alert"></div>
+
+<main class="workspace">
+  <section id="section-submission" class="panel">
+    <h2>Job Description</h2>
+    <p id="submission-hint" class="hint"></p>
+
+    <label for="job-description">Job description</label>
+    <textarea id="job-description" placeholder="Paste job description here..." rows="12"></textarea>
+
+    <label for="source-url">Page URL (optional)</label>
+    <input id="source-url" type="url" placeholder="https://example.com/job">
+
+    <button type="button" id="submit-review" class="primary-button">Submit for Review</button>
+  </section>
+
+  <section id="section-loading" class="panel hidden" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <p>Generating your review… this can take up to two minutes.</p>
+  </section>
+
+  <section id="section-questions" class="panel hidden">
+    <div id="questions-fit"></div>
+    <div id="questions-gap-map"></div>
+    <div id="questions-form"></div>
+    <button type="button" id="submit-answers" class="primary-button secondary">Submit additional information</button>
+  </section>
+
+  <section id="section-result" class="panel hidden">
+    <div id="result-fit"></div>
+    <div id="result-gap-map"></div>
+
+    <div class="resume-controls">
+      <label class="redline-toggle-label">
+        <input type="checkbox" id="redline-toggle" checked>
+        Show redline
+      </label>
+      <button type="button" id="copy-resume" class="secondary-button">Copy clean text</button>
+    </div>
+    <p class="hint">My suggestions are in redline. Hover a change to accept, reject, or edit it.</p>
+    <div id="redline-container" class="resume-body"></div>
+  </section>
+</main>
+
+<script type="module" src="/app/js/main.js"></script>
+</body>
+</html>

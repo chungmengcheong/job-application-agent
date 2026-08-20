@@ -16,63 +16,6 @@ the item:
 Entries marked **Confirmed** are supported by current code, tests, or build
 configuration. **Validation risk** requires a live check.
 
-## Increment 3 — Simplify the web client around the durable API
-
-Goal: Make the web application deliberate, restorable, and independently
-maintainable without Chrome abstractions.
-
-### Add a shared fetch helper
-
-Centralize `/api/v1` requests, safe-error-envelope parsing, authentication
-headers, and timeouts in one small module. Do not add a build step, a
-framework, or event-stream parsing.
-
-gates_release_type: personal
-
-### Introduce explicit workflow state
-
-Separate durable server state, in-flight/loading state, and local editing
-state. Derive what the UI shows directly from the review's own status
-rather than a separately maintained state name. Authentication must not be
-inferred from loaded resume content.
-
-gates_release_type: personal
-
-### Apply the minimum module split
-
-Extract only a review workspace, review display, and redline editing around
-the fetch helper and review state. Resume management and active-resume
-selection do not exist yet; add that module in Increment 3.5, once stored
-resumes exist. Split further only when behavior becomes independently
-complex.
-
-gates_release_type: clean-up
-
-### Build a deliberate full-page web product
-
-Remove Chrome-only controls and fixed side-panel assumptions. Serve the web
-client from the same FastAPI app as `/api/v1`, retiring the separate Vercel
-deploy. Add responsive review routes, accessible loading/error states, and
-restoration by durable review ID. Resume routes arrive in Increment 3.5 with
-stored resumes.
-
-gates_release_type: beta
-
-### Confirm the supported web client needs no build step
-
-Plain HTML/CSS/JS has no package manager, lockfile, bundler, or compiler to
-standardize. Add a production-like browser smoke test exercising the
-two-call demo flow, and any pure-logic unit tests, run non-interactively.
-
-gates_release_type: beta
-
-Exit gate:
-
-- Refresh restores a durable review from the backend.
-- The supported web client's tests and browser smoke test pass
-  non-interactively; there is no build, typecheck, or lint step to run.
-- Supported web code has no Chrome platform abstraction or behavior.
-
 ## Increment 3.5 — Add durable users, stored resumes, and one-time trial onboarding
 
 Goal: Introduce durable users and stored resumes — the identity that

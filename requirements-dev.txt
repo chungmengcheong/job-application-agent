@@ -1,0 +1,8 @@
+# Dev-only dependencies, not part of the deployed app's runtime.
+#
+# Backs tests/test_web_smoke.py's production-like browser smoke test of the
+# supported web client (web/). Install once, then `playwright install
+# chromium` to fetch the browser binary.
+-r requirements.txt
+playwright~=1.47.0
+pytest-playwright~=0.5.2
