@@ -47,8 +47,11 @@ Served same-origin from the existing FastAPI app:
   instead of the retired Vercel deploy.
 
 Because the web client is same-origin with `/api/v1`, every request is a
-plain relative `fetch(...)` — no `BACKEND_URL` env, no local/cloud dev
-toggle, and no CORS handling for this origin at all.
+plain relative `fetch(...)` by default — no `BACKEND_URL` env or production
+CORS boundary. Outside production, `GET /app-config` enables a header toggle
+that can direct all live and demo API calls to `http://127.0.0.1:8000`; the
+selection persists in local storage. The control stays hidden and any stale
+local selection is ignored when `ENVIRONMENT=production`.
 
 ## Retired extension runtime
 

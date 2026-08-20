@@ -76,3 +76,47 @@ def test_debug_is_enabled_when_environment_is_not_production() -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_app_config_disables_local_api_toggle_in_production() -> None:
+    environment = os.environ.copy()
+    environment["ENVIRONMENT"] = "production"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import backend.api as api; "
+                "assert api.app_config() == {'allow_local_api': False}"
+            ),
+        ],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_app_config_enables_local_api_toggle_outside_production() -> None:
+    environment = os.environ.copy()
+    environment["ENVIRONMENT"] = "development"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import backend.api as api; "
+                "assert api.app_config() == {'allow_local_api': True}"
+            ),
+        ],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr

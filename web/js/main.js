@@ -3,6 +3,7 @@
 // the mechanism the exit gate's "refresh restores a durable review from the
 // backend" requires. Demo mode never changes the URL (see docs/frontend.md).
 import { getReview } from "./api.js";
+import { initBackendModeControl } from "./backend-mode.js";
 import { initReviewWorkspace } from "./review-workspace.js";
 import * as workflow from "./workflow.js";
 
@@ -30,6 +31,7 @@ async function restoreReviewFromUrl() {
 }
 
 async function bootstrap() {
+  await initBackendModeControl();
   await initReviewWorkspace();
   await restoreReviewFromUrl();
 }

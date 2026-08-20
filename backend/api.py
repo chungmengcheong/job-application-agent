@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Security
 from fastapi.responses import FileResponse
 from langsmith import Client
+from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 from backend.api_v1 import api_v1_app
@@ -59,6 +60,16 @@ async def lifespan(app: FastAPI):
 
 # Set up the same-origin FastAPI application, durable API, and static files.
 app = FastAPI(debug=not settings.is_production, lifespan=lifespan)
+if not settings.is_production:
+    # Development-only support for loading the web client from a separate
+    # local/preview origin while directing its API calls to localhost.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 # Mount the durable, authenticated review API
 app.mount("/api/v1", api_v1_app)
 # Serve static files at /static
@@ -69,6 +80,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def splash():
     """Serve the marketing splash page."""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/app-config", include_in_schema=False)
+def app_config():
+    """Expose the one non-sensitive runtime flag the static client needs."""
+    return {"allow_local_api": not settings.is_production}
 
 
 @app.get("/app/reviews/{review_id}", include_in_schema=False)

@@ -85,6 +85,7 @@ def test_demo_review_and_answers_flow_renders_end_to_end(live_server, page) -> N
     web/ files and the actual FastAPI app, no live provider call."""
     page.goto(f"{live_server}/app/")
 
+    page.locator("#api-mode-toggle").wait_for(state="visible")
     job_description_field = page.locator("#job-description")
     job_description_field.wait_for(state="visible")
     # Demo mode prefills the job description from the canned fixture.

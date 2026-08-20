@@ -3,6 +3,7 @@
 // helper in api.js scopes. Kept separate because their response shapes
 // (PascalCase `Fit`/`Gap_Map`/...) and error shape (`{"detail": ...}`) differ
 // from the durable `ReviewOut`/safe-error-envelope contract.
+import { apiUrl } from "./backend-mode.js";
 
 const TIMEOUT_MODEL_CALL_MS = 150000;
 const TIMEOUT_DEFAULT_MS = 30000;
@@ -11,7 +12,7 @@ async function demoFetch(path, { method = "GET", body, timeoutMs = TIMEOUT_DEFAU
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(path, {
+    const res = await fetch(apiUrl(path), {
       method,
       headers: { "Content-Type": "application/json" },
       body: body !== undefined ? JSON.stringify(body) : undefined,

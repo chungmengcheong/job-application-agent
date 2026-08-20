@@ -4,6 +4,7 @@
 // and safe-error-envelope parsing - not a schema-mirroring "typed" client;
 // the backend already validates request/response shapes (backend/schemas.py).
 import { clearAuthToken, getAuthToken } from "./auth.js";
+import { apiUrl } from "./backend-mode.js";
 
 // Matches today's budgets: the two model calls get a long timeout, everything
 // else gets a short one.
@@ -31,7 +32,7 @@ async function apiFetch(path, { method = "GET", body, timeoutMs = TIMEOUT_DEFAUL
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(path, {
+    const res = await fetch(apiUrl(path), {
       method,
       headers: {
         "Content-Type": "application/json",
@@ -86,7 +87,7 @@ export function submitAnswers(reviewId, qaPairs) {
  */
 export async function loadLiveResume() {
   const token = await getAuthToken();
-  const res = await fetch("/resume?command=load&demo=false", {
+  const res = await fetch(apiUrl("/resume?command=load&demo=false"), {
     headers: token ? { Authorization: `Bearer ${token.idToken}` } : {},
   });
   if (!res.ok) {
