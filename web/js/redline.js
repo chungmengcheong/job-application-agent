@@ -1,6 +1,5 @@
 // Ports resume-renderer.tsx's actual redline behavior (the unused
-// inline-redline*.tsx files in the retired extension never shipped - see
-// plan-refactor-frontend.md's "Current state"): parse the backend's
+// inline-redline*.tsx files in the retired extension never shipped): parse the
 // deterministic <add>/<del> markup (backend/redline.py), let the user
 // accept/reject/edit each change, and render either the decorated redline
 // view or the clean (all-pending-changes-accepted) view.

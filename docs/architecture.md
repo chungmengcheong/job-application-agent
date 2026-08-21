@@ -1,9 +1,9 @@
 # AI Recruiting Agent — Architecture
 
-This is the current-system architecture. [../PLAN.md](../PLAN.md) records the
-remaining cross-cutting constraints; [../backlog.md](../backlog.md) owns future
-implementation order; [api.md](api.md) and [frontend.md](frontend.md) contain
-the detailed contracts.
+This is the current-system architecture. [../backlog.md](../backlog.md) owns
+the cross-cutting constraints, implementation order, and exit gates;
+[api.md](api.md) and [frontend.md](frontend.md) contain the detailed
+contracts.
 
 ## Product and client boundary
 
@@ -111,14 +111,14 @@ fail-open handling of a missing `email_verified` claim.
 
 The current one-operator resume remains `user/resume.txt`, exposed to the live
 client through the authenticated legacy `GET /resume`. The next personal-use
-increment replaces it with durable `users` and `resumes`, changes review
-creation from inline resume content to an owned `resume_id`, and keeps the
-inline snapshot on each review immutable.
+increment starts with a fresh database, seeds one `ccmmail@gmail.com` user,
+ports that file into a stored resume, changes review creation from inline
+resume content to an owned `resume_id`, and keeps the inline snapshot on each
+review immutable. Historical `users` and `reviews` are not imported.
 
-When existing reviews are migrated, their stored `owner` values are sufficient
-to create users keyed by Google `sub`, but not to reconstruct email. Email must
-therefore be nullable for migrated users until their next verified login (or be
-backfilled from another verified source); migration must not invent it.
+The seed does not invent a Google identity claim. On the first verified login
+for the allowlisted email, the stable Google `sub` is attached to the seeded
+user; subsequent ownership uses that `sub`, not the email string.
 
 ## LLM configuration constraints
 
@@ -146,7 +146,7 @@ abstraction.
 | Web client | Same-origin static files under `web/` | responsive workflow and callback registration |
 | Authentication | Google browser token, backend verification and allowlist | state, nonce, expiry, logout, and unauthorized paths |
 | Provider | Groq through `LLMClient` | model quality, proxy, timeouts, safe errors, usage |
-| Persistence | SQLite `reviews` table in `data/reviews.db` | durability, backup/restore, locking, overlapping writes |
+| Persistence | SQLite `users`, `resumes`, and `reviews` tables in `data/reviews.db` | durability, backup/restore, locking, overlapping writes |
 | Tracing | LangSmith enabled for development | confirm disabled in production |
 
 Static code and tests do not prove those production boundaries. SQLite remains
@@ -154,11 +154,11 @@ the intended store unless live persistence or contention tests fail materially.
 
 ## Near-term changes
 
-The next increment adds durable users and stored resumes for the personal app.
-Authenticated one-time-trial onboarding is a separate beta increment after the
-personal production boundary has been validated. This keeps identity/data
-migration and resume selection separate from trial eligibility, pre-auth input
-handling, and abuse controls.
+The next increment adds durable users and the first stored resume for the
+personal app from a fresh database. Authenticated one-time-trial onboarding is
+a separate beta increment after the personal production boundary has been
+validated. Active-resume selection and resume history remain deferred until
+multiple stored resumes are needed.
 
 Before invited beta use, every store operation must be owner-scoped; two-user
 authorization/concurrency, retention/deletion, backup/restore, and deployment

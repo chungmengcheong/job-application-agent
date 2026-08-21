@@ -1,222 +1,182 @@
-# AI Recruiting Agent — Frontend Notes
+# AI Recruiting Agent — Frontend Architecture
 
-This document records the current frontend and the supported web-only target.
+This is the current frontend source of truth. The supported client is a small
+plain HTML/CSS/JS application under `web/`, served by the same FastAPI app as
+`/api/v1`. The backend contracts remain in [api.md](api.md); implementation
+order and exit gates remain in [../backlog.md](../backlog.md).
 
-**Landed (Increment 3, 2026-08-20):** the supported web client is plain
-HTML/CSS/JS with no build step, served by the same FastAPI app as
-`/api/v1` (`web/`), replacing the Next.js/React app for the supported
-product. See `plan-refactor-frontend.md` for the historical implementation
-plan this followed. The obsolete `BrowserExtension/` tree and generated
-extension release have now been removed; Git tag
-`chrome-extension-last-working` preserves the last working implementation.
+There is no frontend build step, framework runtime, separate frontend
+deployment, or production cross-origin boundary. The development-only API
+toggle is described below because it is explicitly disabled and ignored in
+production.
 
-## Supported web client (`web/`)
-
-One page (`web/index.html`) with a handful of ES modules under `web/js/`,
-loaded directly by the browser via `<script type="module">` — no bundler,
-transpiler, or package.json:
+## Client structure
 
 ```text
-web/js/
-    auth.js              Google OAuth (implicit flow) + token storage
-    api.js                /api/v1 fetch helper (auth header, timeouts,
-                          safe-error-envelope parsing) + the one legacy
-                          authenticated GET /resume getter Increment 3.5
-                          replaces with stored resumes
-    demo-api.js           the canned demo's non-/api/v1 routes
-    workflow.js            durable/workflow/local state boundary; derives
-                          what to show from review?.status
-    review-workspace.js    orchestrator: DOM wiring, submit/answer actions
-    review-display.js      fit/gap/question render functions
-    redline.js              accept/reject/edit for the deterministic redline
-    main.js                 bootstrap + durable-review-ID restoration
-web/auth-callback.html      OAuth fragment parsing, state/nonce check, redirect
-web/css/styles.css          plain CSS (flexbox/grid)
-web/tests/*.test.mjs         pure-logic unit tests (`node --test`)
+web/
+    index.html                 one workspace document
+    auth-callback.html         OAuth callback document
+    css/styles.css             layout and presentation
+    js/
+        main.js                bootstrap and durable-review URL restoration
+        workflow.js            shared render state and active-tab state
+        review-workspace.js    DOM wiring and workflow orchestration
+        api.js                 authenticated /api/v1 fetches
+        demo-api.js            isolated canned-demo fetches
+        auth.js                browser credential and login helpers
+        backend-mode.js        development-only API target toggle
+        review-display.js      fit, gap, and question rendering
+        redline.js             local redline rendering and editing
+    tests/*.test.mjs           pure-logic Node tests
 ```
 
-Served same-origin from the existing FastAPI app:
+FastAPI serves `/app/` and the explicit `/app/reviews/{review_id}` route. The
+browser normally calls relative URLs, so the document and API share an origin.
+In non-production, `/app-config` may explicitly enable a local API target at
+`http://127.0.0.1:8000`; the selection is ignored and hidden in production,
+including when stale local storage is present.
 
-- `app.mount("/app", StaticFiles(directory=WEB_DIR, html=True))` serves
-  `web/index.html` at `/app/` and every other file under `web/` as-is.
-- `GET /app/reviews/{review_id}` is an explicit route registered before that
-  mount (a static mount alone 404s on a path with no matching file); it
-  serves the same `index.html`, and `main.js` reads the ID back out of
-  `location.pathname` and hydrates via `GET /api/v1/reviews/{review_id}`.
-- The marketing splash (`static/index.html`, unchanged) links to `/app/`
-  instead of the retired Vercel deploy.
+## Multi-tab workspace dataflow
 
-Because the web client is same-origin with `/api/v1`, every request is a
-plain relative `fetch(...)` by default — no `BACKEND_URL` env or production
-CORS boundary. Outside production, `GET /app-config` enables a header toggle
-that can direct all live and demo API calls to `http://127.0.0.1:8000`; the
-selection persists in local storage. The control stays hidden and any stale
-local selection is ignored when `ENVIRONMENT=production`.
-
-## Retired extension runtime
-
-The former side-panel manifest, background worker, content script, Chrome
-identity/storage code, Next.js/React client, packaging scripts, generated
-artifacts, and extension-only tests are no longer in the active tree. The
-supported `web/` client never imported them, so no web-oriented rename or
-shared platform adapter was needed.
-
-After the web workflow is reliable, reassess a new thin extension against three
-browser-native jobs: extracting the active page's job description, assisting
-with user-approved application-form completion, and inspecting relevant
-networking context. Reuse the proven API and only the UI components that are
-actually economical to share.
-
-## Current dataflow
+“Tabs” means the four accessible panels inside one workspace document. They
+are not browser tabs and do not own separate application state. `workflow.js`
+keeps one `review` object and one `activeTab`; `review-workspace.js` renders
+only the selected panel and derives labels and enabled controls from the
+review stage.
 
 ```text
-page loads at /app/
-    -> demo mode by default; job description prefilled from the demo fixture
-
-user logs in (full-page Google OAuth redirect, then back to /app/)
-    -> authenticated; the one live operator resume is loaded (GET /resume)
-
-submit job description
-    -> Call 1 (demo: POST /review; live: POST /api/v1/reviews)
-    -> fit + gaps + questions
-    -> live mode pushes /app/reviews/{id} into the URL (history.pushState)
-
-submit answers
-    -> Call 2 (demo: POST /questions; live: POST /api/v1/reviews/{id}/answers)
-    -> revised fit + revised gaps + tailored redline
-
-refresh, or load /app/reviews/{id} directly
-    -> main.js calls GET /api/v1/reviews/{id} and hydrates the same view
+                              same-origin browser session
+                                         |
+ /app/ or /app/reviews/{id}  ->  main.js -> workflow.js
+                                         |
+                           review-workspace.js renders one active panel
+                                         |
+        +----------------+---------------+----------------+----------------+
+        |                |                                |                |
+ Job Description     Job fit                         Questions          Resume
+ input / source      fit + gaps                       answers             baseline or
+ URL; submit         actions                         -> Call 2             proposed
+ -> Call 1           -> Questions                    -> revised            redline
+                                                     Job fit
 ```
 
-Demo mode never touches the URL or `/api/v1` (see "Canned demo experience"
-below); only live reviews are restorable by ID.
+### Tab contract
 
-## Canned demo experience
+| Panel | Initial state | Contents | Main transition or dataflow |
+|---|---|---|---|
+| Job Description | Active on a new workspace | Job-description input, optional source URL, and submit action. After review creation it becomes a read-only view. | Submit starts Call 1. Demo uses `POST /review`; live mode uses `POST /api/v1/reviews` with the stored `resume_id` after Increment 3.5. |
+| Job fit | Disabled before a review exists; active after Call 1 | Fit score, rationale, gap map, and stage-appropriate actions. | Call 1 returns `awaiting_answers`, activates this panel, and enables the Questions panel. After Call 2 its label becomes `Revised Job Fit`. |
+| Questions | Disabled before a review exists; enabled when questions are returned | Follow-up questions and unsent answer fields. | “Provide answers” selects this panel. Submit calls demo `POST /questions` or live `POST /api/v1/reviews/{review_id}/answers`, then returns to Revised Job Fit. |
+| Resume | Available before and after review | The demo or stored baseline resume before completion; the proposed resume and redline controls after completion. | Before completion it is a baseline view. After a completed Call 2, “See proposed resume” selects it and displays the deterministic redline. |
 
-Keep the current product experience:
+The loading section temporarily replaces the workspace while a model call is
+running. Errors appear in the shared error banner; a 401 clears the browser
+credential and a 403 leaves authentication intact while reporting that the
+resource is forbidden.
 
-- fixed synthetic resume and job description;
-- canned initial and follow-up results;
-- no authentication, account, provider call, persistence, or continuity;
-- read-only server fixtures; and
-- the same frontend response schemas as mocked live behavior.
+### End-to-end flows
 
-The future authenticated one-time trial is separate. It may collect a resume
-and job description in browser memory, then requires authentication and explicit
-submission before persistence or a custom provider call.
+#### New workspace
+
+1. `main.js` initializes the backend-mode control and the review workspace.
+2. Demo mode is on by default. The Job Description panel is active, its job
+   description is prefilled from a fixed fixture, and the Resume panel can
+   show the fixed demo resume. Job fit and Questions are disabled.
+3. In live mode, the user logs in first. Until Increment 3.5, the workspace
+   loads the single operator resume through the authenticated legacy
+   `GET /resume`; Increment 3.5 replaces that with the user's stored resume.
+
+#### Call 1 and tab transition
+
+1. The user submits the Job Description panel.
+2. The client enters loading state and sends the job description plus resume
+   input to the appropriate demo or live endpoint.
+3. The response becomes the single `review` state object. The client selects
+   Job fit, renders fit/gaps, and enables Questions when follow-up questions
+   exist. A live review pushes `/app/reviews/{review_id}` into browser history;
+   demo mode does not change the URL or create a database record.
+
+#### Call 2 and proposed resume
+
+1. The user selects Questions, fills the local answer fields, and submits.
+2. The client sends the question/answer pairs for the current review. The
+   server reruns Call 2 from the immutable resume and job-description
+   snapshot.
+3. A completed review replaces the `review` object, changes the labels to
+   Revised Job Fit and Proposed resume, selects Revised Job Fit, and enables
+   the proposed-resume action.
+4. Selecting Proposed resume renders the deterministic redline. Accept,
+   reject, edit, redline visibility, and copy-clean-text changes remain local
+   browser state; they do not create a server artifact version.
+
+#### Refresh and direct review URL
+
+Only a live review has a durable URL. On `/app/reviews/{review_id}`, `main.js`
+sets live mode and loading state, calls `GET /api/v1/reviews/{review_id}`, and
+hydrates the same tab workspace. It selects Job fit after restoration. The
+review's server `status` (`processing | awaiting_answers | completed |
+failed`) remains the source of truth for what the panels show. Demo results
+are deliberately route-less and are not restored after refresh.
 
 ## State ownership
 
 ### Durable server state
 
-- current authenticated user (from the verified ID token, not yet a durable
-  `users` row — Increment 3.5);
-- the one live operator resume (Increment 3.5 adds stored resumes and
-  active-resume selection);
-- review ID, immutable inputs, status, answers, and validated result; and
-- completed tailored resume and redline.
-
-Refreshing the page refetches this state by ID (`web/js/main.js`).
+The backend owns the authenticated user, stored resumes, review ID, immutable
+resume/job-description snapshot, status, answers, validated result, and
+timestamps. Increment 3.5 introduces the durable user and resume records from
+a fresh database and removes the live dependency on `user/resume.txt`.
 
 ### Workflow state
 
-`web/js/workflow.js` does not invent a separate client-side state name kept
-in sync by hand. What the UI shows derives directly from the review's own
-status (`processing | awaiting_answers | completed | failed`, the same enum
-`backend/review_store.py` uses) once a review exists, alongside a few
-independent flags that aren't part of that enum: `authenticated`,
-`demoMode`, `loading`, and `error` (plus `notAuthorized`, distinct from
-`authenticated` — a 403 leaves the session valid but forbids one resource,
-while a 401 signs the user out).
-
-Authentication is tracked from `auth.js`'s stored-token presence, never
-inferred from whether a resume fetch happened to succeed.
+`workflow.js` owns only the current review representation, authentication and
+demo flags, loading/error flags, the active tab, and the distinct
+`notAuthorized` flag. It does not maintain a second named workflow-state enum.
+Once a review exists, display derives from the review's server status.
 
 ### Local UI state
 
-- unsent job description and source URL (`review-workspace.js`);
-- unsent answers (`review-display.js`'s question form);
-- per-change accept/reject/edit overrides and the redline-visibility toggle
-  (`redline.js`); and
-- copy feedback.
+`review-workspace.js` and `redline.js` own unsent job-description/source-URL
+fields, unsent answers, redline accept/reject/edit overrides, redline
+visibility, and copy feedback. These values are intentionally not treated as
+durable review state.
 
-Finalized-resume persistence is deferred. Copy and local editing remain
-without creating additional server artifact versions.
+## Request boundaries
 
-## Shared fetch helper
+`api.js` centralizes relative `/api/v1` requests, bearer headers, timeouts,
+safe-error parsing, and 401 credential clearing. After Increment 3.5 its live
+review creation call sends `resume_id`, not inline resume content.
 
-`web/js/api.js` centralizes:
+`demo-api.js` remains separate because the permanent demo uses non-`/api/v1`
+routes, fixed server fixtures, no authentication, no provider calls, and no
+persistence. It returns the same consumer-level stages needed by the tabs but
+uses the legacy PascalCase response shapes.
 
-- `/api/v1` URLs;
-- bearer headers;
-- safe error codes (attaches the HTTP status to the thrown `Error` so
-  callers can distinguish 401 from 403); and
-- timeouts (150s for the two model calls, 30s elsewhere) and JSON parsing.
+The supported system does not read another browser tab or active-page DOM. An
+optional `source_url` is page context only. A browser-native extension is not
+part of this frontend architecture; any future client must be reconsidered as
+a separate backlog decision over the proven API.
 
-This is a small module, not a compiled "typed" client — nothing enforces
-request/response shapes without a compiler, and the backend already
-validates them (`backend/schemas.py`) before they reach the browser. It does
-not add SSE parsing, reconnect logic, provider events, or Chrome storage
-abstractions. `web/js/demo-api.js` is a separate, equally small module for
-the canned demo's non-`/api/v1` routes, whose response and error shapes
-differ from the durable contract.
+## Redline behavior
 
-## Redline editing
+`redline.js` parses the backend's deterministic `<add>`/`<del>` markup into
+ordered segments and addresses changes by segment index. The controls are
+keyboard-focusable buttons rendered inside each pending change. The clean-text
+copy treats unresolved pending changes as accepted, while the current local
+accept/reject/edit choices are preserved in the workspace until the page is
+reloaded.
 
-`web/js/redline.js` parses the backend's deterministic
-`<span style="color:#008000"><add>…</add></span>` /
-`...#c00000"><del>…</del></span>` markup (`backend/redline.py`) into an
-ordered list of segments and addresses each one by array index rather than
-by re-matching the original markup substring. The prior React port
-(`BrowserExtension/components/resume-renderer.tsx`) used
-`tailoredMarkdown.replace(originalMarkup, ...)`, which targets only the
-first textual match — wrong when two changes carry identical markup (e.g.
-the same word changed on two different resume lines). Index-based
-addressing does not have that failure mode. Accept/reject/edit toolbars use
-CSS `:hover`/`:focus-within`, not JS-tracked hover state.
+## Validation and release contract
 
-## Build and release contract
+The web client has no compile, bundle, lint, or package-install step:
 
-The supported web client is plain HTML/CSS/JS with no package manager,
-lockfile, bundler, or compiler — most of a conventional "build and release
-contract" is satisfied by that absence rather than by a passing check:
+- run pure-logic tests with `node --test web/tests/*.test.mjs`;
+- run the production-like browser smoke test with
+  `pytest tests/test_web_smoke.py`; and
+- run locally with `uvicorn backend.api:app --reload --port 8000`, then open
+  `http://127.0.0.1:8000/app/`.
 
-- non-interactive pure-logic unit tests: `node --test web/tests/*.test.mjs`
-  (no install step, no `package.json`);
-- one documented production-like browser smoke test exercising the two-call
-  demo flow and durable-review-ID restoration:
-  `pytest tests/test_web_smoke.py` (dev-only —
-  `pip install -r requirements-dev.txt && playwright install chromium`;
-  skips cleanly if playwright isn't installed); and
-- one documented way to run it locally: `uvicorn backend.api:app --reload
-  --port 8000`, then browse to `http://127.0.0.1:8000/app/` — editing any
-  `web/` file takes effect on the next refresh, no build/watch process
-  involved.
-
-The retired Next.js/React app and extension build remain available at Git tag
-`chrome-extension-last-working`. A future extension would receive its own
-release contract if the browser-native jobs justify resuming it.
-
-## Current web gaps
-
-- OAuth callback registration and failure behavior are not live-verified
-  (Increment 4).
-- `web/auth-callback.html` ports the prior callback's behavior as-is: it
-  does not fail closed when expected state or nonce is missing from
-  `sessionStorage` (Increment 4 hardens this).
-- multiple stored resumes and active selection do not yet exist — the live
-  workflow still loads the one operator resume via the legacy authenticated
-  `GET /resume` (Increment 3.5 replaces this with `resume_id`); and
-- redline accept/reject/edit interactions are hover-driven, not yet
-  keyboard-operable.
-
-## Validation boundary
-
-Static code and configuration establish the current state model, build
-shape, and the client-side restoration mechanism (verified by
-`tests/test_web_smoke.py` against a real browser and a real server process,
-using a seeded token and an intercepted API response rather than live
-OAuth). They do not prove deployed OAuth, responsive layout, or a live
-authenticated two-call workflow end to end. Those require the explicit
-production checks in [../backlog.md](../backlog.md)'s Increment 4.
+The smoke test verifies the served demo two-call flow, tab transitions, and
+durable-review-ID hydration with a seeded token and intercepted API response.
+It does not verify deployed Google OAuth, responsive layout, or a live
+provider-backed workflow; those remain Increment 4 validation work.

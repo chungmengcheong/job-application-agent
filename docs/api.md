@@ -239,6 +239,14 @@ response.
 
 ### Increment 3.5: add users and stored resumes
 
+Increment 3.5 starts from a fresh personal database rather than migrating
+existing `users` or `reviews`. Initialization creates one user with canonical
+email `ccmmail@gmail.com` and ports `user/resume.txt` into that user's stored
+resume. The seed is idempotent and does not invent a Google `sub`; the first
+verified login for that allowlisted email attaches the stable `sub`, which is
+then the ownership key. Multiple-resume activation and resume history are
+deferred.
+
 ```text
 GET    /api/v1/me
 
@@ -246,7 +254,6 @@ GET    /api/v1/resumes
 POST   /api/v1/resumes
 GET    /api/v1/resumes/{resume_id}
 PUT    /api/v1/resumes/{resume_id}
-POST   /api/v1/resumes/{resume_id}/activate
 ```
 
 `POST /api/v1/reviews` switches from inline resume content to:
@@ -349,8 +356,7 @@ The trial is part of Increment 3.5, so it uses the normal owned `/api/v1`
 resources introduced there. Resume and job description may be collected in
 browser memory before login, but no persistence or provider call occurs until
 authentication and explicit submit. On submit the system creates or resolves
-the internal user, stores the resume, marks it active, and creates an owned
-review.
+the internal user, stores the resume, and creates an owned review.
 
 ## Ownership rules
 

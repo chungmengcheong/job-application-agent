@@ -16,49 +16,84 @@ the item:
 Entries marked **Confirmed** are supported by current code, tests, or build
 configuration. **Validation risk** requires a live check.
 
+## Cross-cutting testing and safety rules
+
+- Write the behavioral assertion before fixing each confirmed defect.
+- Normal tests must block live provider calls unless a fake is explicitly
+  injected.
+- Validate complete model output before replacing the prior valid artifact.
+- Keep every test's mutable filesystem or database isolated.
+- Validate canned demo fixtures and mocked live responses through the same
+  consumer schemas.
+- Preserve strict known-defect tests until the fixing increment makes them
+  pass.
+- Run focused tests, the complete backend suite, frontend logic tests, and the
+  browser smoke test after each relevant increment. The web client has no
+  compile or bundle step.
+- Production validation is required for Google OAuth, Groq, hosting, and
+  SQLite persistence; mocks do not establish those boundaries.
+- Never log tokens, resumes, job descriptions, answers, raw prompts, or raw
+  model responses.
+- Keep production tracing disabled until explicit content, access, and
+  retention controls exist.
+
 ## Increment 3.5 — Add durable users and stored resumes
 
-Goal: Introduce durable users and stored resumes — the identity that
-Increment 2's `Review` records referenced only loosely, by raw `sub` and
-inline resume content — and replace the personal app's legacy
-`user/resume.txt` dependency without adding beta onboarding concerns.
+Goal: Create the minimum durable personal data model from a fresh database.
+Do not migrate existing `users` or `reviews`. Bootstrap one personal user
+(`ccmmail@gmail.com`) and port the single `user/resume.txt` into that user's
+stored resume, then remove the live file dependency without adding beta
+onboarding concerns.
 
-### Add SQLite configuration and migrations for users and resumes
+### Create the fresh SQLite personal schema
 
-Add `users` and `resumes` tables with foreign keys and transaction boundaries,
-and a development-safe initialization command. Migrate existing `reviews`
-rows forward: create the matching `users` row keyed by each recorded `sub`, and
-add a nullable `resume_id` column recording which stored resume (if any) a
-review used. Existing review rows do not contain a verified email, so migrated
-users must allow email to remain null until the user's next verified login (or
-another verified backfill); never invent it. Do not add repository hierarchies,
-separate artifact tables, model-call tables, or optimistic versions.
+Add `users` and `resumes` tables plus the review ownership/resume references,
+foreign keys, transaction boundaries, and a development-safe initialization
+command. A pre-existing database is outside this increment's compatibility
+scope: initialize the supported personal database fresh rather than importing
+historical `users` or `reviews`. Do not add repository hierarchies, separate
+artifact tables, model-call tables, or optimistic versions.
 
 gates_release_type: personal
 
-### Add internal users derived from verified identity
+### Seed the personal user and resume
+
+Idempotently create the user with canonical email `ccmmail@gmail.com` and
+create its initial stored resume from `user/resume.txt`. Do not fabricate a
+Google identity claim while seeding. On the first verified login for that
+allowlisted email, attach the stable Google `sub` to the seeded user; use that
+`sub`, not email, as the ongoing ownership key. A verified login may update a
+missing or changed display/audit email.
+
+gates_release_type: personal
+
+### Resolve internal users from verified identity
 
 Resolve or create a user from the verified Google `sub`. Use email for display
-and allowlist audit, never as the ownership key. A verified login updates a
-missing or changed email on that user.
+and allowlist audit, never as the ongoing ownership key. The seeded personal
+email is the one explicit bootstrap association; do not create a second user
+for the same verified `ccmmail@gmail.com` login.
 
 gates_release_type: personal
 
-### Support stored resumes and one active selection
+### Support the stored resume
 
-Allow each user to create, list, retrieve, update, and activate stored resumes.
-Exactly one stored resume may be active at a time. Switch `POST
-/api/v1/reviews` to take `resume_id` instead of inline resume content, and
-update the (already `/api/v1`-based) web client to select from stored resumes
-accordingly. Do not add archive or resume version history yet.
+Allow each user to create, retrieve, and update a stored resume. The initial
+personal workflow has one stored resume; active-resume selection and resume
+history remain deferred until multiple resumes are needed.
+Switch `POST /api/v1/reviews` to take `resume_id` instead of inline resume content, and
+update the (already `/api/v1`-based) web client to load the user's stored
+resume accordingly. Do not add archive or resume version history yet.
 
 gates_release_type: personal
 
 Exit gate:
 
-- One authenticated user can manage stored resumes and select one as active.
-- Reviews created before Increment 3.5 resolve to a real owning `users` row
-  without fabricating missing identity claims.
+- A fresh personal database contains one seeded `ccmmail@gmail.com` user and
+  the ported `user/resume.txt` as that user's stored resume; historical users
+  and reviews are not imported.
+- A verified login binds that user to the Google `sub` without creating a
+  duplicate user.
 - Review creation takes an owned `resume_id` while retaining an immutable
   inline snapshot for both model calls.
 - The legacy live `GET /resume` path and `user/resume.txt` dependency are gone.
@@ -87,7 +122,7 @@ gates_release_type: personal
 
 ### Validate the deployed personal workflow
 
-Exercise login, active-resume selection, Call 1, answers, Call 2, redline, and
+Exercise login, stored-resume loading, Call 1, answers, Call 2, redline, and
 reload in the deployed web app.
 
 gates_release_type: personal
@@ -136,8 +171,8 @@ gates_release_type: beta
 ### Require authentication and explicit submission
 
 After authentication, show what will be submitted and require an explicit
-action. Create the internal user, store the resume as active, create the owned
-review, and then run the normal two-call workflow.
+action. Create the internal user, store the resume, create the owned review,
+and then run the normal two-call workflow.
 
 gates_release_type: beta
 
@@ -167,8 +202,8 @@ gates_release_type: beta
 
 ### Add two-user concurrency and authorization tests
 
-Run overlapping review, follow-up, resume update, activation, and forbidden
-access scenarios for two identities.
+Run overlapping review, follow-up, resume update, and forbidden-access
+scenarios for two identities.
 
 gates_release_type: beta
 
@@ -191,6 +226,7 @@ Exit gate:
 - Two users can run overlapping workflows with no cross-user access or state
   corruption.
 - The beta has a tested release, backup, and rollback path.
+
 
 ## Future decision — Reassess a thin browser-native extension
 
@@ -221,4 +257,6 @@ These are not ordered implementation commitments:
 - advanced automatic retry orchestration;
 - finalized-resume persistence;
 - Chrome extension implementation until the browser-native jobs are reassessed;
-- Postgres unless SQLite production validation fails.
+- Postgres unless SQLite production validation fails;
+- active-resume selection and resume history until multiple stored resumes are
+  needed.
