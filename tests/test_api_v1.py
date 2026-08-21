@@ -105,6 +105,8 @@ def test_create_review_returns_awaiting_answers_with_call1_result(make_client) -
     assert body["status"] == "awaiting_answers"
     assert body["result"]["Fit"]["score"] == 6
     assert body["result"]["Questions"] == ["What else?"]
+    assert body["questions"] == ["What else?"]
+    assert body["answers"] is None
     assert body["safe_error_code"] is None
     assert body["id"].startswith("rev_")
 
@@ -223,23 +225,43 @@ def test_submit_answers_completes_review(make_client) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "completed"
+    assert body["questions"] == ["What else?"]
+    assert body["answers"] == [{"question": "What else?", "answer": "More detail."}]
     assert "<add>" in body["result"]["Tailored_Resume"]
 
 
-def test_submit_answers_rejects_review_not_awaiting_answers(make_client) -> None:
-    client, _ = make_client([CALL1_RESPONSE, CALL2_RESPONSE])
+def test_submit_answers_can_rerun_after_completion(make_client) -> None:
+    client, _ = make_client([CALL1_RESPONSE, CALL2_RESPONSE, CALL2_RESPONSE])
     created = client.post(
         "/api/v1/reviews",
         json={"resume": "RESUME", "job_description": "JOB"},
         headers=_auth("user-a-token"),
     ).json()
-    qa_body = {"qa_pairs": [{"question": "What else?", "answer": "More detail."}]}
+    first_answers = {"qa_pairs": [{"question": "What else?", "answer": "More detail."}]}
     client.post(
-        f"/api/v1/reviews/{created['id']}/answers", json=qa_body, headers=_auth("user-a-token")
+        f"/api/v1/reviews/{created['id']}/answers",
+        json=first_answers,
+        headers=_auth("user-a-token"),
     )
 
     response = client.post(
-        f"/api/v1/reviews/{created['id']}/answers", json=qa_body, headers=_auth("user-a-token")
+        f"/api/v1/reviews/{created['id']}/answers",
+        json={"qa_pairs": [{"question": "What else?", "answer": "Updated detail."}]},
+        headers=_auth("user-a-token"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answers"] == [{"question": "What else?", "answer": "Updated detail."}]
+
+
+def test_submit_answers_rejects_review_still_processing(make_client) -> None:
+    client, store = make_client([])
+    record = store.create(owner="user-a", resume_content="RESUME", job_description="JOB", source_url=None)
+
+    response = client.post(
+        f"/api/v1/reviews/{record.id}/answers",
+        json={"qa_pairs": []},
+        headers=_auth("user-a-token"),
     )
 
     assert response.status_code == 409

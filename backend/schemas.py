@@ -90,6 +90,8 @@ class ReviewOut(BaseModel):
     status: str
     job_description: str | None = None
     resume: str | None = None
+    questions: list[str] | None = None
+    answers: list[dict[str, str]] | None = None
     result: dict | None = None
     safe_error_code: str | None = None
     created_at: str

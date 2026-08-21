@@ -36,6 +36,9 @@
       <button type="button" id="tab-job-fit" class="review-tab" role="tab" aria-selected="false" aria-controls="tab-panel-job-fit" data-review-tab="job-fit" disabled>
         Job fit
       </button>
+      <button type="button" id="tab-questions" class="review-tab" role="tab" aria-selected="false" aria-controls="tab-panel-questions" data-review-tab="questions" disabled>
+        Questions for You
+      </button>
       <button type="button" id="tab-resume" class="review-tab" role="tab" aria-selected="false" aria-controls="tab-panel-resume" data-review-tab="resume">
         Resume
       </button>
@@ -63,10 +66,15 @@
     <section id="tab-panel-job-fit" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-job-fit" tabindex="0">
       <div id="review-fit"></div>
       <div id="review-gap-map"></div>
-      <div id="review-questions" class="hidden">
-        <div id="questions-form"></div>
-        <button type="button" id="submit-answers" class="primary-button secondary">Submit additional information</button>
+      <div id="job-fit-actions" class="review-actions hidden">
+        <button type="button" id="update-answers" class="secondary-button">Provide answers to questions</button>
+        <button type="button" id="see-proposed-resume" class="primary-button" disabled>See proposed resume</button>
       </div>
+    </section>
+
+    <section id="tab-panel-questions" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-questions" tabindex="0">
+      <div id="questions-form"></div>
+      <button type="button" id="submit-answers" class="primary-button secondary hidden">Submit additional information</button>
     </section>
 
     <section id="tab-panel-resume" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-resume" tabindex="0">
@@ -76,7 +84,7 @@
       </div>
 
       <div id="revised-resume-view" class="resume-view hidden">
-        <h2>Revised Resume</h2>
+        <h2>Proposed resume</h2>
         <div class="resume-controls">
           <label class="redline-toggle-label">
             <input type="checkbox" id="redline-toggle" checked>

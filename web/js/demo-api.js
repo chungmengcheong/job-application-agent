@@ -8,6 +8,13 @@ import { apiUrl } from "./backend-mode.js";
 const TIMEOUT_MODEL_CALL_MS = 150000;
 const TIMEOUT_DEFAULT_MS = 30000;
 
+const DEMO_ANSWER_TEXTS = [
+  "I have supported investor-facing diligence and fundraising readiness for portfolio companies, and I have relationships with Silicon Valley Angels, Benchmark, and Sequoia. I have not personally led a seed round.",
+  "At Financia, I founded a data science group. At HomeQuest, I led ML-enabled product work with a cross-functional team and can provide more detail on scope and outcomes.",
+  "I advised NewHealthCare on repositioning the business from a licensed model to SaaS while navigating regulatory concerns.",
+  "I coach and mentor pre-seed and seed startup CEOs and management teams as an Operating Advisor at Keirutsu.",
+];
+
 async function demoFetch(path, { method = "GET", body, timeoutMs = TIMEOUT_DEFAULT_MS } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -43,6 +50,14 @@ export function demoReview(jobDescription) {
     body: { job_description: jobDescription, url: "", demo: true },
     timeoutMs: TIMEOUT_MODEL_CALL_MS,
   });
+}
+
+/** @param {string[]} questions @returns {Array<{question: string, answer: string}>} */
+export function demoAnswers(questions) {
+  return questions.map((question, index) => ({
+    question,
+    answer: DEMO_ANSWER_TEXTS[index] || "Demo answer.",
+  }));
 }
 
 /** @returns {Promise<{Fit, Gap_Map, Tailored_Resume}>} the canned Call 2 response (ReviewResult) */

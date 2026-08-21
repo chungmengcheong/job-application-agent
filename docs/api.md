@@ -210,6 +210,8 @@ representation on success:
   "status": "awaiting_answers",
   "job_description": "...",
   "resume": "...",
+  "questions": ["..."],
+  "answers": null,
   "result": { "Fit": { "score": 0, "rationale": "..." }, "Gap_Map": [], "Questions": [] },
   "safe_error_code": null,
   "created_at": "...",
@@ -219,8 +221,8 @@ representation on success:
 ```
 
 `job_description` and `resume` are the immutable inputs for the authenticated
-review. The web client uses them to keep the Job Description and Resume tabs
-available after a durable review is restored.
+review. `questions` and `answers` preserve the follow-up interaction so the
+Questions for You tab can be restored and submitted again after Call 2.
 
 `result` holds whichever validated shape the review's current stage
 produced — Call 1's `Fit`/`Gap_Map`/`Questions`, or Call 2's revised
@@ -278,7 +280,8 @@ new compatibility facade.
 
 The server retrieves the original resume snapshot and job description, runs
 Call 2 with the submitted answers, validates the result, generates the redline,
-and persists `completed` or `failed` state. No artifact version is required
+and persists `completed` or `failed` state. A completed review may be submitted
+again with updated answers to rerun Call 2. No artifact version is required
 initially.
 
 ### Review status
@@ -320,7 +323,7 @@ Codes implemented as of Increment 2 (`backend/errors.py`):
 | `FORBIDDEN` | 403 | false | not on the allowlist (`check_authorized_user`) |
 | `NOT_FOUND` | 404 | false | missing or other-owner review |
 | `VALIDATION_ERROR` | 422 | false | request body fails schema validation |
-| `REVIEW_NOT_AWAITING_ANSWERS` | 409 | false | answers submitted outside `awaiting_answers` |
+| `REVIEW_NOT_AWAITING_ANSWERS` | 409 | false | answers submitted while the review is still processing or has no prior result |
 | `MODEL_CALL_FAILED` | 502 | true | the provider call itself raised |
 | `MODEL_INVALID_OUTPUT` | 502 | true | invalid JSON or schema mismatch from the provider |
 

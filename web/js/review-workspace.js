@@ -14,6 +14,8 @@ import * as workflow from "./workflow.js";
 let liveResume = null;
 let baselineResume = null;
 let currentJobDescription = "";
+let reviewQuestions = [];
+let questionAnswers = [];
 let redlineSegments = null;
 let editingIndex = null;
 let renderedReview = null;
@@ -25,6 +27,13 @@ function escapeHtml(text) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function getQuestionsForReview(review) {
+  if (Array.isArray(review?.questions)) return review.questions;
+  if (Array.isArray(review?.result?.Questions)) return review.result.Questions;
+  if (Array.isArray(review?.answers)) return review.answers.map((pair) => pair.question);
+  return [];
 }
 
 function handleApiError(err) {
@@ -96,6 +105,8 @@ async function handleDemoToggle() {
   const state = workflow.getState();
   baselineResume = null;
   currentJobDescription = "";
+  reviewQuestions = [];
+  questionAnswers = [];
   renderedReview = null;
   workflow.setState({ demoMode: !state.demoMode, review: null, error: null, activeTab: "job-description" });
   await prefillSubmissionForm();
@@ -117,7 +128,14 @@ async function handleSubmitReview() {
       ]);
       baselineResume = resume;
       workflow.setState({
-        review: { status: "awaiting_answers", job_description: jobDescription, resume, result },
+        review: {
+          status: "awaiting_answers",
+          job_description: jobDescription,
+          resume,
+          questions: result.Questions || [],
+          answers: demoApi.demoAnswers(result.Questions || []),
+          result,
+        },
         loading: false,
         activeTab: "job-fit",
       });
@@ -137,6 +155,8 @@ async function handleSubmitReview() {
         ...review,
         job_description: review.job_description || jobDescription,
         resume: review.resume || liveResume,
+        questions: review.questions || getQuestionsForReview(review),
+        answers: review.answers || [],
       },
       loading: false,
       activeTab: "job-fit",
@@ -151,16 +171,17 @@ async function handleSubmitReview() {
 
 async function handleSubmitAnswers() {
   const state = workflow.getState();
-  const questions = state.review?.result?.Questions;
-  if (!questions) return;
+  const questions = reviewQuestions.length ? reviewQuestions : getQuestionsForReview(state.review);
+  if (!questions.length) return;
   const qaPairs = collectAnswers(el("questions-form"), questions);
+  questionAnswers = qaPairs;
 
   workflow.setState({ loading: true, error: null });
   try {
     if (state.demoMode) {
       const result = await demoApi.demoQuestions(qaPairs);
       workflow.setState({
-        review: { ...state.review, status: "completed", result },
+        review: { ...state.review, status: "completed", questions, answers: qaPairs, result },
         loading: false,
         activeTab: "job-fit",
       });
@@ -172,6 +193,8 @@ async function handleSubmitAnswers() {
         ...updated,
         job_description: updated.job_description || state.review.job_description || currentJobDescription,
         resume: updated.resume || state.review.resume || baselineResume,
+        questions: updated.questions || questions,
+        answers: updated.answers || qaPairs,
       },
       loading: false,
       activeTab: "job-fit",
@@ -186,6 +209,8 @@ async function handleLogout() {
   liveResume = null;
   baselineResume = null;
   currentJobDescription = "";
+  reviewQuestions = [];
+  questionAnswers = [];
   renderedReview = null;
   workflow.setState({ authenticated: false, review: null, error: null, activeTab: "job-description" });
   await prefillSubmissionForm();
@@ -234,7 +259,8 @@ function renderReviewTabs(state) {
   const labels = {
     "job-description": "Job Description",
     "job-fit": isCompleted ? "Revised Job Fit" : "Job fit",
-    resume: isCompleted ? "Revised Resume" : "Resume",
+    questions: "Questions for You",
+    resume: isCompleted ? "Proposed resume" : "Resume",
   };
   const activeTab = hasReview
     ? (labels[state.activeTab] ? state.activeTab : "job-fit")
@@ -248,7 +274,7 @@ function renderReviewTabs(state) {
       tab.textContent = label;
       tab.setAttribute("aria-selected", String(isActive));
       tab.tabIndex = isActive ? 0 : -1;
-      tab.disabled = !hasReview && tabId === "job-fit";
+      tab.disabled = !hasReview && ["job-fit", "questions"].includes(tabId);
       tab.setAttribute("aria-disabled", String(tab.disabled));
     }
     if (panel) {
@@ -259,7 +285,16 @@ function renderReviewTabs(state) {
 
   el("submission-content")?.classList.toggle("hidden", hasReview);
   el("review-job-description-view")?.classList.toggle("hidden", !hasReview);
-  el("review-questions")?.classList.toggle("hidden", !hasReview || isCompleted);
+  el("submit-answers")?.classList.toggle("hidden", !hasReview || reviewQuestions.length === 0);
+  el("job-fit-actions")?.classList.toggle("hidden", !hasReview);
+  const updateAnswersButton = el("update-answers");
+  if (updateAnswersButton) {
+    updateAnswersButton.textContent = isCompleted
+      ? "Update answers to questions"
+      : "Provide answers to questions";
+  }
+  const proposedResumeButton = el("see-proposed-resume");
+  if (proposedResumeButton) proposedResumeButton.disabled = !isCompleted;
   el("baseline-resume-view")?.classList.toggle("hidden", isCompleted);
   el("revised-resume-view")?.classList.toggle("hidden", !isCompleted);
 }
@@ -271,6 +306,10 @@ function renderInitialState(state) {
     || (state.demoMode || state.authenticated
       ? "Loading your resume…"
       : "Your resume will appear here after you log in or turn on demo mode.");
+  reviewQuestions = [];
+  questionAnswers = [];
+  el("questions-form").innerHTML = "";
+  el("submit-answers")?.classList.add("hidden");
 }
 
 function renderReviewContent(review) {
@@ -284,9 +323,12 @@ function renderReviewContent(review) {
 
   el("review-fit").innerHTML = renderFit(review.result.Fit);
   el("review-gap-map").innerHTML = renderGapMap(review.result.Gap_Map);
+  reviewQuestions = getQuestionsForReview(review);
+  questionAnswers = Array.isArray(review.answers) ? review.answers : [];
+  el("questions-form").innerHTML = renderQuestionsForm(reviewQuestions, questionAnswers);
+  el("submit-answers")?.classList.toggle("hidden", reviewQuestions.length === 0);
 
   if (review.status === "awaiting_answers") {
-    el("questions-form").innerHTML = renderQuestionsForm(review.result.Questions || []);
     el("baseline-resume").textContent = baselineResume || "Resume is unavailable for this review.";
   } else {
     redlineSegments = parseSegments(review.result.Tailored_Resume || "");
@@ -317,6 +359,8 @@ function wireStaticControls() {
   el("demo-toggle").onclick = handleDemoToggle;
   el("submit-review").onclick = handleSubmitReview;
   el("submit-answers").onclick = handleSubmitAnswers;
+  el("update-answers").onclick = () => workflow.setActiveTab("questions");
+  el("see-proposed-resume").onclick = () => workflow.setActiveTab("resume");
   el("redline-toggle").onchange = renderRedlineView;
   for (const tab of document.querySelectorAll("[data-review-tab]")) {
     tab.onclick = () => workflow.setActiveTab(tab.dataset.reviewTab);

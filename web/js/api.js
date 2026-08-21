@@ -53,7 +53,7 @@ async function apiFetch(path, { method = "GET", body, timeoutMs = TIMEOUT_DEFAUL
 
 /**
  * @param {{resume: string, jobDescription: string, sourceUrl?: string}} input
- * @returns {Promise<{id, status, result, safe_error_code, created_at, updated_at, completed_at}>} ReviewOut
+ * @returns {Promise<{id, status, job_description, resume, questions, answers, result, safe_error_code, created_at, updated_at, completed_at}>} ReviewOut
  */
 export function createReview({ resume, jobDescription, sourceUrl }) {
   return apiFetch("/api/v1/reviews", {

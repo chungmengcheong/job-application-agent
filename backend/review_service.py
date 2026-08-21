@@ -107,10 +107,10 @@ class ReviewService:
         self, *, review_id: str, owner: str, qa_pairs: list[dict]
     ) -> ReviewRecord:
         record = self.get_review(review_id=review_id, owner=owner)
-        if record.status != "awaiting_answers":
+        if record.status not in {"awaiting_answers", "completed", "failed"} or record.result_json is None:
             raise ApiError(
                 code="REVIEW_NOT_AWAITING_ANSWERS",
-                message="This review is not awaiting answers.",
+                message="This review is not ready for answers.",
                 status_code=status.HTTP_409_CONFLICT,
             )
 

@@ -56,14 +56,14 @@ export function renderGapMap(gapMap) {
   return `<h3>Gap Analysis against Job "Must Haves"</h3><div class="gap-cards">${cards}</div>`;
 }
 
-/** @param {string[]} questions */
-export function renderQuestionsForm(questions) {
+/** @param {string[]} questions @param {Array<{question?: string, answer?: string}>} answers */
+export function renderQuestionsForm(questions, answers = []) {
   const items = questions
     .map(
       (question, index) => `
       <div class="question-item">
         <label for="answer-${index}">${index + 1}. ${escapeHtml(question)}</label>
-        <textarea id="answer-${index}" data-question-index="${index}" placeholder="Your answer..."></textarea>
+        <textarea id="answer-${index}" data-question-index="${index}" placeholder="Your answer...">${escapeHtml(answers[index]?.answer || "")}</textarea>
       </div>`
     )
     .join("");

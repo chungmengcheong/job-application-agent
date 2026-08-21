@@ -194,6 +194,28 @@ def test_submit_answers_call2_prompt_carries_call1_fit_and_gap_map(
     assert "Additional_Info" not in call2_input
 
 
+def test_submit_answers_can_rerun_after_completion(
+    store: ReviewStore, prompt_paths: tuple[Path, Path]
+) -> None:
+    service, fake_llm = _service(store, [CALL1_RESPONSE, CALL2_RESPONSE, CALL2_RESPONSE], prompt_paths)
+    record = service.create_review(
+        owner="owner-1", resume_content="RESUME", job_description="JOB", source_url=None
+    )
+
+    service.submit_answers(
+        review_id=record.id, owner="owner-1", qa_pairs=[{"question": "Q?", "answer": "A."}]
+    )
+    updated = service.submit_answers(
+        review_id=record.id,
+        owner="owner-1",
+        qa_pairs=[{"question": "Q?", "answer": "Updated."}],
+    )
+
+    assert len(fake_llm.prompts) == 3
+    assert updated.status == "completed"
+    assert updated.answers_json == [{"question": "Q?", "answer": "Updated."}]
+
+
 def test_submit_answers_rejects_review_not_awaiting_answers(
     store: ReviewStore, prompt_paths: tuple[Path, Path]
 ) -> None:

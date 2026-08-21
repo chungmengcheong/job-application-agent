@@ -96,6 +96,7 @@ def test_demo_review_and_answers_flow_renders_end_to_end(live_server, page) -> N
     assert page.locator("#section-review").is_visible()
     assert page.locator("#tab-job-description").get_attribute("aria-selected") == "true"
     assert page.locator("#tab-job-fit").is_disabled()
+    assert page.locator("#tab-questions").is_disabled()
     assert not page.locator("#tab-resume").is_disabled()
     page.click("#tab-resume")
     page.wait_for_function(
@@ -108,25 +109,44 @@ def test_demo_review_and_answers_flow_renders_end_to_end(live_server, page) -> N
     page.click("#submit-review")
 
     page.locator("#section-review").wait_for(state="visible", timeout=20_000)
+    page.click("#tab-questions")
+    page.locator(".question-item textarea").first.wait_for(state="visible", timeout=20_000)
     assert page.locator("#tab-job-fit").inner_text().strip() == "Job fit"
+    assert page.locator("#tab-questions").inner_text().strip() == "Questions for You"
     assert page.locator("#tab-resume").inner_text().strip() == "Resume"
+    assert page.locator("#answer-0").input_value().strip() != ""
     assert page.locator("#review-fit .fit-badge").inner_text().strip() != ""
     assert page.locator(".gap-card").count() > 0
-    assert page.locator(".question-item textarea").count() > 0
     assert page.locator("#review-job-description").inner_text().strip() != ""
 
-    page.click("#tab-resume")
-    assert page.locator("#baseline-resume").inner_text().strip() != ""
+    assert "Additional Information from you" in page.locator("#questions-form").inner_text()
+    assert page.locator(".question-item textarea").count() > 0
     page.click("#tab-job-fit")
-
+    assert page.locator("#job-fit-actions").is_visible()
+    assert page.locator("#update-answers").inner_text().strip() == "Provide answers to questions"
+    assert page.locator("#see-proposed-resume").is_disabled()
+    page.click("#update-answers")
+    assert page.locator("#tab-questions").get_attribute("aria-selected") == "true"
     page.fill(".question-item textarea >> nth=0", "Extra relevant detail for the demo.")
     page.click("#submit-answers")
 
     page.locator("#section-review").wait_for(state="visible", timeout=20_000)
     assert page.locator("#tab-job-fit").inner_text().strip() == "Revised Job Fit"
-    assert page.locator("#tab-resume").inner_text().strip() == "Revised Resume"
-    assert page.locator("#review-questions").is_hidden()
+    assert page.locator("#tab-questions").inner_text().strip() == "Questions for You"
+    assert page.locator("#tab-resume").inner_text().strip() == "Proposed resume"
+    assert page.locator("#update-answers").inner_text().strip() == "Update answers to questions"
+    assert not page.locator("#see-proposed-resume").is_disabled()
     assert page.locator("#review-fit .fit-badge").inner_text().strip() != ""
+    page.click("#see-proposed-resume")
+    assert page.locator("#tab-resume").get_attribute("aria-selected") == "true"
+    page.click("#tab-questions")
+    assert page.locator("#answer-0").input_value() == "Extra relevant detail for the demo."
+    page.fill("#answer-0", "Updated detail for the demo.")
+    page.click("#submit-answers")
+    page.locator("#tab-questions").wait_for(state="visible", timeout=20_000)
+    assert page.locator("#tab-job-fit").inner_text().strip() == "Revised Job Fit"
+    page.click("#tab-questions")
+    assert page.locator("#answer-0").input_value() == "Updated detail for the demo."
     page.click("#tab-resume")
     assert page.locator("#redline-container").inner_text().strip() != ""
 
@@ -153,6 +173,8 @@ def test_reviews_url_restores_a_durable_review_on_load(live_server, page) -> Non
         "status": "completed",
         "job_description": "Restored job description.",
         "resume": "Restored baseline resume.",
+        "questions": ["What else?"],
+        "answers": [{"question": "What else?", "answer": "Restored answer."}],
         "result": {
             "Fit": {"score": 8, "rationale": "Restored rationale."},
             "Gap_Map": [
@@ -184,6 +206,8 @@ def test_reviews_url_restores_a_durable_review_on_load(live_server, page) -> Non
     assert "8/10" in page.locator("#review-fit .fit-badge").inner_text()
     page.click("#tab-job-description")
     assert "Restored job description." in page.locator("#review-job-description").inner_text()
+    page.click("#tab-questions")
+    assert page.locator("#answer-0").input_value() == "Restored answer."
     page.click("#tab-resume")
     assert "improved" in page.locator("#redline-container").inner_text()
 

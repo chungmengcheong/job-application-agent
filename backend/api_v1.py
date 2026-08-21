@@ -25,11 +25,20 @@ review_service = ReviewService(store=review_store, llm_client=LLMClient())
 
 
 def _to_review_out(record: ReviewRecord) -> ReviewOut:
+    answers = record.answers_json
+    if answers is not None:
+        questions = [pair.get("question", "") for pair in answers]
+    elif record.result_json:
+        questions = record.result_json.get("Questions")
+    else:
+        questions = None
     return ReviewOut(
         id=record.id,
         status=record.status,
         job_description=record.job_description,
         resume=record.resume_content,
+        questions=questions,
+        answers=answers,
         result=record.result_json,
         safe_error_code=record.safe_error_code,
         created_at=record.created_at,

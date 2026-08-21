@@ -12,7 +12,7 @@
 // redline.js.
 
 const SECTION_IDS = ["loading", "review"];
-const TAB_IDS = ["job-description", "job-fit", "resume"];
+const TAB_IDS = ["job-description", "job-fit", "questions", "resume"];
 
 const state = {
   review: null,
