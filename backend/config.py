@@ -6,6 +6,7 @@ are committed here in source, since this app has a single deployment
 target. Secrets and the authorized-user allowlist have no default and are
 read only from the environment / `.env` file - see `.env.example`.
 """
+import os
 from pathlib import Path
 
 import httpx
@@ -106,3 +107,12 @@ class Settings(BaseSettings):
 
 # Singleton instance
 settings = Settings()
+
+# Several provider SDKs (including LangSmith's Requests-based client) read
+# proxy configuration from the process environment rather than from the
+# Pydantic settings object. Export the configured values after loading .env so
+# all SDK clients share the same PythonAnywhere outbound path. The explicit
+# Groq and Google clients still configure their own transports as well.
+if proxy_url := (settings.https_proxy or settings.http_proxy):
+    os.environ["HTTP_PROXY"] = proxy_url
+    os.environ["HTTPS_PROXY"] = proxy_url
