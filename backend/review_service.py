@@ -4,6 +4,7 @@ validates the provider's output before persisting it, and maps failures to
 the safe `/api/v1` error envelope.
 """
 import json
+import logging
 from pathlib import Path
 
 from fastapi import status
@@ -16,6 +17,9 @@ from backend.paths import PROMPT_CALL1_ANALYSIS_FILE, PROMPT_CALL2_TAILOR_FILE
 from backend.redline import redline_diff
 from backend.review_store import ReviewRecord, ReviewStore
 from backend.schemas import AnalysisResult, ReviewResult
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewService:
@@ -59,7 +63,17 @@ class ReviewService:
     def _complete_and_validate(self, prompt: str, schema: type, call_name: str):
         try:
             raw = self._llm_client.complete(prompt)
-        except Exception:
+        except Exception as error:
+            # Keep the client-facing envelope deliberately generic, but make
+            # provider failures diagnosable in the deployment log. Do not log
+            # the prompt, resume, job description, answers, or credentials.
+            logger.exception(
+                "LLM call failed: call=%s exception=%s status_code=%s request_id=%s",
+                call_name,
+                type(error).__name__,
+                getattr(error, "status_code", None),
+                getattr(error, "request_id", None),
+            )
             raise ApiError(
                 code="MODEL_CALL_FAILED",
                 message=f"{call_name}: the model call failed. Please try again.",
