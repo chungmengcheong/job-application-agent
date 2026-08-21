@@ -554,6 +554,24 @@ Exit gate:
 - `grep -rn "chrome\." web/` returns nothing — `web/` was written fresh and
   never imported from `BrowserExtension/`.
 
+### Refine the two-call review workspace
+
+Make the review tabs and follow-up interaction explicit without changing the
+underlying two-call model workflow. Keep the Questions for You interaction
+available for revision after Call 2 and make the canned demo self-guiding.
+
+gates_release_type: personal
+
+Landed: `bd4e252` separates Questions for You into its own tab, disables it
+until Call 1 exists, preserves questions and answers through Call 2, and
+allows a completed review to rerun Call 2 with updated answers. The job-fit
+panel now provides navigation actions for answering questions and viewing the
+proposed resume; the resume tab is labelled Proposed resume after Call 2.
+Demo mode pre-fills the follow-up answers after the job description is
+submitted. Added durable API/service/browser regression coverage and kept the
+palette values centralized in the CSS root variables and aligned in the
+splash page.
+
 
 ## Cleanup — Archive the frozen Chrome extension implementation — Done
 
@@ -572,4 +590,3 @@ imports from or runtime dependency on the frozen implementation.
   hypothesis.
 
 gates_release_type: clean-up
-
