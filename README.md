@@ -1,11 +1,11 @@
-## AI Recruiting Agent
+## Job Application Coach
 
-The AI Recruiting Agent is an AI agent that maximizes your chances of landing an interview! 
+Job Application Coach helps you maximize your chances of landing an interview.
 
 Note, The code is a work-in-progress. It is not intended for use by anyone other than myself and my beta testers. I'm using this project to get hands-on experience with (a) creating and supporting an AI powered product, especially on the AI pipeline such as evals, and (b) building using the latest AI design and development tools. I wrote most of the back-end manually and vibe-coded the front-end.
 
 ### Product features
-The AI Recruiting Agent is a web application that:
+Job Application Coach is a web application that:
 * Assess how the user's resume lines up against a job (description). 
 * Provide a item-by-item assessment of how their experience and skills line up against a job's "must haves" and tactics to improve that alignment
 * Interview them for potential additional relevant experience and skills that may not be on their resume, but might be relevant to the job 
@@ -13,12 +13,14 @@ The AI Recruiting Agent is a web application that:
 * [Future] Auto-complete the job application forms on their behalf!
 * [Future] Identifies relevant 1st and 2nd degree contacts for networking into the job
 
-Behind the scenes, the AI Recruiting Agent uses a custom AI-pipeline incorporating the developer's years of career coaching and recruiting experience together with latest LLM models.
+Behind the scenes, Job Application Coach uses a custom AI pipeline incorporating
+the developer's years of career coaching and recruiting experience together with
+the latest LLM models.
 
 ### Using the application
 
 The supported product is the web application at
-https://airecruitingagent.pythonanywhere.com. Chrome extension development and
+https://jobapplicationcoach.pythonanywhere.com. Chrome extension development and
 releases are frozen during the web-first refactor, so the extension is not a
 supported installation or release target today. A future extension may return
 as a thin client for browser-native capabilities after the web workflow is
@@ -40,15 +42,16 @@ Note:
 #### First-time installation
 
 Run these commands in a PythonAnywhere Bash console. The paths below match the
-`airecruitingagent.pythonanywhere.com` deployment; adjust the account, domain,
-and repository URL if deploying elsewhere.
+`jobapplicationcoach.pythonanywhere.com` deployment. The
+`/home/jobapplicationcoach` prefix is the new free-account path; adjust it if
+the account username differs.
 
 1. Clone the repository:
 
    ```bash
    cd ~
-   git clone https://github.com/chungmengcheong/job-application-agent.git airecruitingagent
-   cd ~/airecruitingagent
+   git clone https://github.com/chungmengcheong/job-application-coach.git jobapplicationcoach
+   cd ~/jobapplicationcoach
    ```
 
 2. Create the virtualenv used by the web app and install the runtime
@@ -57,9 +60,9 @@ and repository URL if deploying elsewhere.
 
    ```bash
    mkdir -p ~/.virtualenvs
-   python3.10 -m venv ~/.virtualenvs/airecruitingagent-venv
-   ~/.virtualenvs/airecruitingagent-venv/bin/python -m pip install --upgrade pip
-   ~/.virtualenvs/airecruitingagent-venv/bin/python -m pip install -r requirements.txt
+   python3.10 -m venv ~/.virtualenvs/jobapplicationcoach-venv
+   ~/.virtualenvs/jobapplicationcoach-venv/bin/python -m pip install --upgrade pip
+   ~/.virtualenvs/jobapplicationcoach-venv/bin/python -m pip install -r requirements.txt
    ```
 
 3. Create the production environment file and fill in the deployment values.
@@ -78,14 +81,14 @@ and repository URL if deploying elsewhere.
 4. Create the FastAPI ASGI web app:
 
    ```bash
-   pa website create --domain airecruitingagent.pythonanywhere.com \
-     --command '/home/airecruitingagent/.virtualenvs/airecruitingagent-venv/bin/uvicorn --app-dir /home/airecruitingagent/airecruitingagent --uds ${DOMAIN_SOCKET} backend.api:app'
+   pa website create --domain jobapplicationcoach.pythonanywhere.com \
+     --command '/home/jobapplicationcoach/.virtualenvs/jobapplicationcoach-venv/bin/uvicorn --app-dir /home/jobapplicationcoach/jobapplicationcoach --uds ${DOMAIN_SOCKET} backend.api:app'
    ```
 
 5. Reload the web app after creating it or changing `.env`:
 
    ```bash
-   pa website reload --domain airecruitingagent.pythonanywhere.com
+   pa website reload --domain jobapplicationcoach.pythonanywhere.com
    ```
 
 #### Updating an existing installation
@@ -93,10 +96,10 @@ and repository URL if deploying elsewhere.
 After each code update:
 
 ```bash
-cd ~/airecruitingagent
+cd ~/jobapplicationcoach
 git pull origin main
-~/.virtualenvs/airecruitingagent-venv/bin/python -m pip install -r requirements.txt
-pa website reload --domain airecruitingagent.pythonanywhere.com
+~/.virtualenvs/jobapplicationcoach-venv/bin/python -m pip install -r requirements.txt
+pa website reload --domain jobapplicationcoach.pythonanywhere.com
 ```
 
 ### Deploying locally

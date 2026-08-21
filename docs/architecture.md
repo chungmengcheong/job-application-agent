@@ -1,4 +1,4 @@
-# AI Recruiting Agent — Architecture
+# Job Application Coach — Architecture
 
 This is the current-system architecture. [../backlog.md](../backlog.md) owns
 the cross-cutting constraints, implementation order, and exit gates;

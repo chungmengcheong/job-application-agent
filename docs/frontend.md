@@ -1,4 +1,4 @@
-# AI Recruiting Agent — Frontend Architecture
+# Job Application Coach — Frontend Architecture
 
 This is the current frontend source of truth. The supported client is a small
 plain HTML/CSS/JS application under `web/`, served by the same FastAPI app as

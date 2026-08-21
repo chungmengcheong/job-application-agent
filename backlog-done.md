@@ -1,4 +1,4 @@
-# AI Recruiting Agent — Completed Backlog Items
+# Job Application Coach — Completed Backlog Items
 
 Completed items are cut from [backlog.md](backlog.md) and pasted here verbatim,
 in completion order, each tagged with the commit that landed it. This file is a

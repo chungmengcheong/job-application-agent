@@ -78,6 +78,19 @@ def _wait_for_server(base_url: str, timeout: float = 15.0) -> None:
     raise RuntimeError(f"Server at {base_url} did not become healthy in time.")
 
 
+def test_splash_page_uses_new_brand_and_preserves_future_features(live_server, page) -> None:
+    """The public splash page carries the renamed brand while retaining
+    interest-testing for the unimplemented application and networking features.
+    """
+    page.goto(live_server)
+
+    assert page.title() == "Job Application Coach — Get Interviews Faster"
+    assert "Job Application Coach" in page.locator("body").inner_text()
+    assert page.get_by_text("Agentic Form Completion").is_visible()
+    assert page.get_by_text("Networking Intelligence").is_visible()
+    assert not page.get_by_text("Get Chrome extension").is_visible()
+
+
 def test_demo_review_and_answers_flow_renders_end_to_end(live_server, page) -> None:
     """Submits the demo job description, answers the follow-up questions,
     and confirms fit/gaps/questions render after Call 1 and the tailored

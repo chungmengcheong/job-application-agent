@@ -1,4 +1,4 @@
-# AI Recruiting Agent — Ordered Backlog
+# Job Application Coach — Ordered Backlog
 
 This is the single source of truth for implementation sequence. Work one
 increment at a time and follow the listed item order unless new evidence changes
@@ -36,6 +36,111 @@ configuration. **Validation risk** requires a live check.
   model responses.
 - Keep production tracing disabled until explicit content, access, and
   retention controls exist.
+
+## Increment 3.1 — Rename project and cut over the public deployment
+
+Goal: Rename the public product to **Job Application Coach**, rename the public
+GitHub repository to `job-application-coach`, and make
+`jobapplicationcoach.pythonanywhere.com` the canonical deployment before
+Increment 3.5 creates the first supported personal database. Start the new
+PythonAnywhere deployment from a fresh checkout and virtualenv rather than
+pointing the new site at the old deployment's `airecruitingagent` virtualenv.
+
+Keep operational identifiers that do not affect the public product stable where
+that avoids migration work: browser storage keys, SQLite table names, and the
+`data/reviews.db` filename do not need renaming. The existing LangSmith project
+name may also remain stable for trace continuity unless a separate observability
+rename is wanted.
+
+### Rename the public product surfaces
+
+Update the visible product name, descriptions, API titles, active documentation,
+backlog headings, deployment instructions, and links to the current repository.
+Retain the existing marketing screenshots for now; their manual refresh is an
+explicit follow-up and does not block this rename. Remove or replace the stale
+Chrome-extension calls to action on the landing page; the extension is retired
+and is not a supported release target.
+
+Preserve the deprecated extension-authentication document as historical
+documentation. Do not rewrite its old flow and host references as if they were
+the current system; label or contextualize them only if needed.
+
+gates_release_type: personal
+
+### Rename the public GitHub repository
+
+Rename `chungmengcheong/job-application-agent` to
+`chungmengcheong/job-application-coach`. Update the local `origin`, README clone
+and deployment commands, active links, and any public references. The local
+checkout directory and Python package layout do not need to change.
+
+gates_release_type: personal
+
+### Provision a fresh canonical PythonAnywhere deployment
+
+Create the web app for `jobapplicationcoach.pythonanywhere.com` with a fresh
+checkout and virtualenv under the new free-account path
+`/home/jobapplicationcoach`, set the production environment values, and
+initialize the new deployment's database. The old `/home/airecruitingagent`
+path belongs only to the previous account and rollback deployment. Do not copy
+the old database unless there is an explicit decision to preserve its data;
+Increment 3.5 already defines the supported personal database as fresh.
+
+Keep the old deployment available as a rollback path until the new site passes
+the exit gate. Then either redirect the old host to the new canonical host or
+leave it as an explicitly retired deployment; do not leave two silently
+diverging production sites.
+
+gates_release_type: personal
+
+### Rewire Google authentication for the new host
+
+Keep the existing Web OAuth client ID unless a concrete Google-console reason
+requires a new client. Register the new production origin and exact callback
+URI, update the OAuth app's public branding and homepage references, and retain
+the old origin during the rollback window if the old site remains usable.
+
+Do not change `ALLOWED_DOMAINS`: in this application it is the authorized email
+domain allowlist, not the website hostname. Do not combine this cutover with the
+Google Identity Services, fail-closed callback validation, or browser-session
+decision deferred to Increment 4; this increment only makes the current flow
+work on the new canonical host.
+
+gates_release_type: personal
+
+### Preserve stable internal identifiers deliberately
+
+Leave the existing `ai_recruiting_agent_auth`,
+`ai_recruiting_agent_oauth_state`, `ai_recruiting_agent_oauth_nonce`, and
+`ai_recruiting_agent_backend_mode` browser keys unchanged. A new hostname has a
+new browser storage origin, so no key migration is required. Leave the existing
+SQLite filename and schema identifiers unchanged; no database migration belongs
+in this rename increment.
+
+If the LangSmith project name is changed, treat the resulting loss of trace
+continuity as an explicit tradeoff rather than an automatic string replacement.
+
+gates_release_type: personal
+
+Exit gate:
+
+- The public product and repository are consistently named Job Application
+  Coach / `job-application-coach` in active code, docs, links, and current
+  marketing copy; remaining old references are explicitly historical, stable
+  internal identifiers, or the intentionally deferred screenshot refresh.
+- The local Git remote points to the renamed public repository.
+- `jobapplicationcoach.pythonanywhere.com` serves `/`, `/app/`, `/health`, and
+  durable review URLs from the fresh checkout and virtualenv.
+- The new host has the correct production environment, proxy configuration,
+  database path, and Google OAuth origin/callback registration.
+- Login, logout, unauthorized-user handling, and permanent canned demo behavior
+  work on the new host; production hides and ignores the development-only local
+  API toggle, while local toggle tests remain green.
+- The old host has a tested rollback or redirect path and no silently diverging
+  production configuration remains.
+- Focused tests, the complete backend suite, frontend logic tests, and the
+  browser smoke test pass against the renamed codebase.
+
 
 ## Increment 3.5 — Add durable users and stored resumes
 

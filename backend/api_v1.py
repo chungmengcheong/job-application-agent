@@ -14,7 +14,7 @@ from backend.review_store import ReviewRecord, ReviewStore
 from backend.schemas import AnswersRequest, CreateReviewRequest, ReviewOut
 from backend.security import check_authorized_user, security, verify_token
 
-api_v1_app = FastAPI(title="AI Recruiting Agent API v1")
+api_v1_app = FastAPI(title="Job Application Coach API v1")
 register_error_handlers(api_v1_app)
 
 # Constructs its own LLMClient rather than importing backend.api's, to avoid

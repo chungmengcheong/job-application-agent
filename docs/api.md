@@ -1,4 +1,4 @@
-# AI Recruiting Agent — Backend API Notes
+# Job Application Coach — Backend API Notes
 
 This document records the current API and the minimum replacement contract. It
 does not define implementation order; see [../backlog.md](../backlog.md).
