@@ -36,6 +36,42 @@ def test_verify_token_accepts_valid_google_claims(
     assert result == claims
 
 
+def test_verify_token_uses_configured_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claims = {
+        "sub": "google-subject",
+        "email": "person@example.com",
+        "email_verified": True,
+        "iss": "https://accounts.google.com",
+    }
+    captured: dict[str, object] = {}
+
+    def fake_verify(token, request, audience):
+        captured["request"] = request
+        return claims
+
+    monkeypatch.setattr(
+        security.id_token, "verify_oauth2_token", fake_verify
+    )
+    monkeypatch.setattr(
+        security.settings, "https_proxy", "http://proxy.example:3128"
+    )
+    monkeypatch.setattr(security.settings, "http_proxy", "")
+
+    result = security.verify_token(
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials="token")
+    )
+
+    request = captured["request"]
+    assert result == claims
+    assert request.session.trust_env is False
+    assert request.session.proxies == {
+        "http": "http://proxy.example:3128",
+        "https": "http://proxy.example:3128",
+    }
+
+
 def test_verify_token_rejects_wrong_issuer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         security.id_token,

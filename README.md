@@ -37,17 +37,67 @@ Note:
 
 ### Deploying on PythonAnywhere
 
-0. Set `ENVIRONMENT=production` in the deployed `.env` file. This disables
-   FastAPI debug mode, which otherwise exposes tracebacks and internal
-   exception detail in HTTP responses. It defaults to `development` (debug
-   enabled) when unset, so local runs are unaffected.
-1. Firstly, create a FastAPI ASGI app
-   - pa website create --domain airecruitingagent.pythonanywhere.com \
-  --command '/home/airecruitingagent/.virtualenvs/airecruitingagent-venv/bin/uvicorn --app-dir /home/airecruitingagent/airecruitingagent --uds ${DOMAIN_SOCKET} backend.api:app'
-2. After each code update:
-   - cd ~/airecruitingagent
-   - git pull origin main
-   - pa website reload --domain airecruitingagent.pythonanywhere.com
+#### First-time installation
+
+Run these commands in a PythonAnywhere Bash console. The paths below match the
+`airecruitingagent.pythonanywhere.com` deployment; adjust the account, domain,
+and repository URL if deploying elsewhere.
+
+1. Clone the repository:
+
+   ```bash
+   cd ~
+   git clone https://github.com/chungmengcheong/job-application-agent.git airecruitingagent
+   cd ~/airecruitingagent
+   ```
+
+2. Create the virtualenv used by the web app and install the runtime
+   dependencies. Use the virtualenv's Python explicitly; running bare `pip`
+   can install packages into the user site instead of the web app's virtualenv.
+
+   ```bash
+   mkdir -p ~/.virtualenvs
+   python3.10 -m venv ~/.virtualenvs/airecruitingagent-venv
+   ~/.virtualenvs/airecruitingagent-venv/bin/python -m pip install --upgrade pip
+   ~/.virtualenvs/airecruitingagent-venv/bin/python -m pip install -r requirements.txt
+   ```
+
+3. Create the production environment file and fill in the deployment values.
+   Keep `.env` private; it is excluded from Git. At minimum, set
+   `ENVIRONMENT=production`, the LLM and LangSmith keys, an authorized email or
+   domain, and PythonAnywhere's HTTP(S) proxy values.
+
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+
+   `ENVIRONMENT=production` disables FastAPI debug mode, which otherwise
+   exposes tracebacks and internal exception detail in HTTP responses.
+
+4. Create the FastAPI ASGI web app:
+
+   ```bash
+   pa website create --domain airecruitingagent.pythonanywhere.com \
+     --command '/home/airecruitingagent/.virtualenvs/airecruitingagent-venv/bin/uvicorn --app-dir /home/airecruitingagent/airecruitingagent --uds ${DOMAIN_SOCKET} backend.api:app'
+   ```
+
+5. Reload the web app after creating it or changing `.env`:
+
+   ```bash
+   pa website reload --domain airecruitingagent.pythonanywhere.com
+   ```
+
+#### Updating an existing installation
+
+After each code update:
+
+```bash
+cd ~/airecruitingagent
+git pull origin main
+~/.virtualenvs/airecruitingagent-venv/bin/python -m pip install -r requirements.txt
+pa website reload --domain airecruitingagent.pythonanywhere.com
+```
 
 ### Deploying locally
 

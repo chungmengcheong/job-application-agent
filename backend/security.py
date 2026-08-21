@@ -12,6 +12,20 @@ ALLOWED_EMAILS = settings.allowed_emails_set
 ALLOWED_DOMAINS = settings.allowed_domains_set
 
 
+def _google_request() -> grequests.Request:
+    """Build Google's verifier request using the configured outbound proxy."""
+    request = grequests.Request()
+    proxy_url = settings.https_proxy or settings.http_proxy
+    if proxy_url:
+        # The proxy comes from pydantic-settings' .env loading, so it is not
+        # necessarily present in os.environ for requests to discover itself.
+        request.session.trust_env = False
+        request.session.proxies.update(
+            {"http": proxy_url, "https": proxy_url}
+        )
+    return request
+
+
 def verify_token(creds: HTTPAuthorizationCredentials = Security(security)):
     """Authenticate user by verifying the Google ID token."""
     if not creds or not creds.credentials:
@@ -23,7 +37,7 @@ def verify_token(creds: HTTPAuthorizationCredentials = Security(security)):
     try:
         claims = id_token.verify_oauth2_token(
             token,
-            grequests.Request(),
+            _google_request(),
             GOOGLE_WEB_CLIENT_ID,  # aud must equal your WEB client_id
         )
         if claims["iss"] not in {"accounts.google.com", "https://accounts.google.com"}:
@@ -60,4 +74,3 @@ def check_authorized_user(claims: dict = Depends(verify_token)) -> dict:
         status_code=status.HTTP_403_FORBIDDEN,
         detail=f"{email} is not an authorized user. Please contact ccmmmail@gmail.com for access."
     )
-
